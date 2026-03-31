@@ -12,6 +12,22 @@ Gaon-i AI 서버의 초기 개발 환경과 개발 원칙을 정리한 문서입
 - `Pydantic Settings`
 - `pytest`
 
+## Quick Start
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install ".[dev]"
+cp .env.example .env.dev
+uvicorn app.main:app --reload
+```
+
+테스트 실행:
+
+```bash
+pytest
+```
+
 ## Initial Structure
 
 ```text

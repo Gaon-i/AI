@@ -16,6 +16,7 @@ env/
 # Environment files
 .env
 .env.*
+.envrc
 !.env.example
 
 # Test and coverage
@@ -41,3 +42,5 @@ dist/
 # Alembic / local sqlite
 *.db
 *.sqlite3
+
+docs/*

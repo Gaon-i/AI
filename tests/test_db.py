@@ -29,7 +29,6 @@ def test_regulation_chunk_columns_match_expected_schema() -> None:
 
     assert set(table.columns.keys()) == {
         "regulation_chunk_id",
-        "document_id",
         "chunk_id",
         "chunk_index",
         "category",
@@ -50,7 +49,6 @@ def test_regulation_chunk_indexes_match_expected_schema() -> None:
     index_names = {index.name for index in table.indexes}
 
     assert index_names == {
-        "ix_regulation_chunk_document_id",
         "ix_regulation_chunk_category",
         "ix_regulation_chunk_dormitory",
         "ix_regulation_chunk_source_type",
@@ -62,7 +60,6 @@ def test_regulation_chunk_columns_match_schema() -> None:
 
     assert set(table.columns.keys()) == {
         "regulation_chunk_id",
-        "document_id",
         "chunk_id",
         "chunk_index",
         "category",
@@ -84,7 +81,6 @@ def test_regulation_chunk_indexes_match_schema() -> None:
 
     assert index_names == {
         "ix_regulation_chunk_category",
-        "ix_regulation_chunk_document_id",
         "ix_regulation_chunk_dormitory",
         "ix_regulation_chunk_source_type",
     }

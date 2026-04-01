@@ -13,14 +13,12 @@ class RegulationChunk(Base):
     # 생활관 규정 검색용 청크를 저장하는 핵심 테이블입니다.
     __tablename__ = "regulation_chunk"
     __table_args__ = (
-        Index("ix_regulation_chunk_document_id", "document_id"),
         Index("ix_regulation_chunk_category", "category"),
         Index("ix_regulation_chunk_dormitory", "dormitory"),
         Index("ix_regulation_chunk_source_type", "source_type"),
     )
 
     regulation_chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    document_id: Mapped[str] = mapped_column(String(100), nullable=False)
     chunk_id: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     category: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

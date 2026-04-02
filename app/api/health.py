@@ -1,10 +1,12 @@
 from fastapi import APIRouter
+from fastapi import Depends
+from sqlalchemy.orm import Session
 
-from app.core.error_codes import DATABASE_UNAVAILABLE
-from app.core.exceptions import AppException
-from app.db.session import check_db_connection
+from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.common import HealthResponseData
+from app.services.health_service import get_db_health_response
+from app.services.health_service import get_health_response
 
 router = APIRouter(tags=["health"])
 
@@ -20,11 +22,7 @@ router = APIRouter(tags=["health"])
     response_description="애플리케이션이 정상 실행 중이면 status=ok를 반환합니다.",
 )
 def health_check() -> ApiResponse[HealthResponseData]:
-    return ApiResponse(
-        status=200,
-        message="success",
-        data=HealthResponseData(status="ok"),
-    )
+    return get_health_response()
 
 
 @router.get(
@@ -42,14 +40,5 @@ def health_check() -> ApiResponse[HealthResponseData]:
         }
     },
 )
-def db_health_check() -> ApiResponse[HealthResponseData]:
-    try:
-        check_db_connection()
-    except Exception as exc:  # pragma: no cover - exercised by real environment checks
-        raise AppException(DATABASE_UNAVAILABLE) from exc
-
-    return ApiResponse(
-        status=200,
-        message="success",
-        data=HealthResponseData(status="ok"),
-    )
+def db_health_check(db: Session = Depends(get_db)) -> ApiResponse[HealthResponseData]:
+    return get_db_health_response(db)

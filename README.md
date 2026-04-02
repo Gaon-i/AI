@@ -141,3 +141,25 @@ fix: 회원가입 시 닉네임 중복 오류 수정
 6. dev 브랜치 병합
 7. 테스트 완료 후 main 브랜치 병합 및 배포
 ```
+
+## 폴더 구조
+
+```text
+Gaon-i/
+├─ alembic/                # DB 마이그레이션
+├─ app/
+│  ├─ api/                 # API 라우터
+│  ├─ core/                # 설정, 공통 예외/에러 처리
+│  ├─ db/                  # DB 세션, ORM 모델
+│  ├─ repositories/        # DB 접근 계층
+│  ├─ schemas/             # 요청/응답 스키마
+│  ├─ services/            # 비즈니스 로직
+│  └─ main.py              # 앱 시작점
+├─ docs/                   # 개발 문서
+├─ tests/                  # 테스트 코드
+└─ pyproject.toml          # 프로젝트 설정
+```
+
+## 참고
+전체 흐름은 API -> Service -> Repository -> DB 구조입니다.
+관리자 API는 X-Admin-Token 헤더 기반으로 보호합니다. (노션 env 참고)

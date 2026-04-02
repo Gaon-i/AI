@@ -163,6 +163,7 @@ def test_create_regulation_chunks_with_embeddings_returns_bulk_result(
     # 벌크 성공 시 생성 건수와 각 항목 상태가 응답용 결과로 정리돼야 합니다.
     payload = build_bulk_payload()
     db = FakeSession()
+    captured_chunk_texts = []
 
     class SavedChunk:
         def __init__(self, chunk_id: str) -> None:
@@ -170,8 +171,23 @@ def test_create_regulation_chunks_with_embeddings_returns_bulk_result(
 
     monkeypatch.setattr(
         regulation_chunk_service,
-        "_create_regulation_chunk_record",
-        lambda _db, item: SavedChunk(item.chunk_id),
+        "find_existing_chunk_ids",
+        lambda _db, _chunk_ids: set(),
+    )
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_embeddings_batch",
+        lambda chunk_texts: [[0.1] * 1536 for _ in chunk_texts],
+    )
+
+    def fake_create_regulation_chunk(**kwargs):
+        captured_chunk_texts.append(kwargs["chunk_text"])
+        return SavedChunk(kwargs["payload"].chunk_id)
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_regulation_chunk",
+        fake_create_regulation_chunk,
     )
 
     result = regulation_chunk_service.create_regulation_chunks_with_embeddings(db, payload)
@@ -181,6 +197,7 @@ def test_create_regulation_chunks_with_embeddings_returns_bulk_result(
         {"chunk_id": "dorm-rule-001-01", "status": "created"},
         {"chunk_id": "dorm-rule-001-02", "status": "created"},
     ]
+    assert len(captured_chunk_texts) == 2
     assert db.commit_called is True
     assert db.rollback_called is False
 
@@ -191,25 +208,36 @@ def test_create_regulation_chunks_with_embeddings_rolls_back_when_one_item_fails
     # 벌크 적재 정책은 전체 실패이므로 중간 항목 하나라도 실패하면 전체 rollback 해야 합니다.
     payload = build_bulk_payload()
     db = FakeSession()
-    call_count = {"value": 0}
-
-    def fake_create_record(_db, item):
-        call_count["value"] += 1
-        if item.chunk_id == "dorm-rule-001-02":
-            raise AppException(REGULATION_CHUNK_ALREADY_EXISTS)
-        return type("SavedChunk", (), {"chunk_id": item.chunk_id})()
+    persisted_chunk_ids = set()
 
     monkeypatch.setattr(
         regulation_chunk_service,
-        "_create_regulation_chunk_record",
-        fake_create_record,
+        "find_existing_chunk_ids",
+        lambda _db, _chunk_ids: set(),
+    )
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_embeddings_batch",
+        lambda chunk_texts: [[0.1] * 1536 for _ in chunk_texts],
+    )
+
+    def fake_create_regulation_chunk(**kwargs):
+        persisted_chunk_ids.add(kwargs["payload"].chunk_id)
+        if kwargs["payload"].chunk_id == "dorm-rule-001-02":
+            raise AppException(REGULATION_CHUNK_ALREADY_EXISTS)
+        return type("SavedChunk", (), {"chunk_id": kwargs["payload"].chunk_id})()
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_regulation_chunk",
+        fake_create_regulation_chunk,
     )
 
     with pytest.raises(AppException) as exc_info:
         regulation_chunk_service.create_regulation_chunks_with_embeddings(db, payload)
 
     assert exc_info.value.error_code == REGULATION_CHUNK_ALREADY_EXISTS
-    assert call_count["value"] == 2
+    assert persisted_chunk_ids == {"dorm-rule-001-01", "dorm-rule-001-02"}
     assert db.commit_called is False
     assert db.rollback_called is True
 
@@ -223,8 +251,19 @@ def test_create_regulation_chunks_with_embeddings_wraps_unexpected_error(
 
     monkeypatch.setattr(
         regulation_chunk_service,
-        "_create_regulation_chunk_record",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected failure")),
+        "find_existing_chunk_ids",
+        lambda _db, _chunk_ids: set(),
+    )
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_embeddings_batch",
+        lambda chunk_texts: [[0.1] * 1536 for _ in chunk_texts],
+    )
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_regulation_chunk",
+        lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected failure")),
     )
 
     with pytest.raises(AppException) as exc_info:
@@ -246,38 +285,6 @@ def test_create_regulation_chunks_with_embeddings_rejects_duplicate_chunk_id_in_
         ]
     )
     db = FakeSession()
-    persisted_chunk_ids = set()
-
-    monkeypatch.setattr(
-        regulation_chunk_service,
-        "create_embedding",
-        lambda _text: [0.1] * 1536,
-    )
-    monkeypatch.setattr(
-        regulation_chunk_service,
-        "find_by_chunk_id",
-        lambda _db, chunk_id: object() if chunk_id in persisted_chunk_ids else None,
-    )
-
-    def fake_create_regulation_chunk(**kwargs):
-        persisted_chunk_ids.add(kwargs["payload"].chunk_id)
-        return type(
-            "SavedChunk",
-            (),
-            {
-                "regulation_chunk_id": 1,
-                "document_id": kwargs["payload"].document_id,
-                "chunk_id": kwargs["payload"].chunk_id,
-                "chunk_index": kwargs["payload"].chunk_index,
-            },
-        )()
-
-    monkeypatch.setattr(
-        regulation_chunk_service,
-        "create_regulation_chunk",
-        fake_create_regulation_chunk,
-    )
-
     with pytest.raises(AppException) as exc_info:
         regulation_chunk_service.create_regulation_chunks_with_embeddings(db, payload)
 

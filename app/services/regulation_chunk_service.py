@@ -8,6 +8,7 @@ from app.core.error_codes import REGULATION_CHUNK_BULK_CREATE_FAILED
 from app.core.error_codes import REGULATION_CHUNK_CREATE_FAILED
 from app.core.exceptions import AppException
 from app.repositories.regulation_chunk_repository import create_regulation_chunk
+from app.repositories.regulation_chunk_repository import find_existing_chunk_ids
 from app.repositories.regulation_chunk_repository import find_by_chunk_id
 from app.schemas.regulation_chunk import RegulationChunkBulkCreateItemResult
 from app.schemas.regulation_chunk import RegulationChunkBulkCreateRequest
@@ -15,6 +16,7 @@ from app.schemas.regulation_chunk import RegulationChunkBulkCreateResult
 from app.schemas.regulation_chunk import RegulationChunkCreateRequest
 from app.schemas.regulation_chunk import RegulationChunkCreateResult
 from app.services.embedding_service import create_embedding
+from app.services.embedding_service import create_embeddings_batch
 
 
 def create_regulation_chunk_with_embedding(
@@ -49,9 +51,31 @@ def create_regulation_chunks_with_embeddings(
     """여러 청크를 한 트랜잭션으로 적재하고 하나라도 실패하면 전체를 rollback 합니다."""
 
     try:
+        chunk_ids = [item.chunk_id for item in payload.items]
+        _validate_bulk_chunk_ids(chunk_ids)
+
+        existing_chunk_ids = find_existing_chunk_ids(db, chunk_ids)
+        if existing_chunk_ids:
+            raise AppException(
+                REGULATION_CHUNK_ALREADY_EXISTS,
+                detail=f"chunk_id already exists: {sorted(existing_chunk_ids)[0]}",
+            )
+
+        chunk_texts = [build_chunk_text(item) for item in payload.items]
+        for chunk_text in chunk_texts:
+            if not chunk_text.strip():
+                raise AppException(INVALID_CHUNK_TEXT)
+
+        embeddings = create_embeddings_batch(chunk_texts)
+
         created_chunks = [
-            _create_regulation_chunk_record(db, item)
-            for item in payload.items
+            create_regulation_chunk(
+                db=db,
+                payload=item,
+                chunk_text=chunk_text,
+                embedding=embedding,
+            )
+            for item, chunk_text, embedding in zip(payload.items, chunk_texts, embeddings)
         ]
         db.commit()
     except AppException:
@@ -117,3 +141,13 @@ def _create_regulation_chunk_record(db: Session, payload: RegulationChunkCreateR
         chunk_text=chunk_text,
         embedding=embedding,
     )
+
+
+def _validate_bulk_chunk_ids(chunk_ids: list[str]) -> None:
+    """같은 벌크 요청 안에서 중복 chunk_id가 있으면 DB 작업 전에 바로 차단합니다."""
+
+    if len(chunk_ids) != len(set(chunk_ids)):
+        raise AppException(
+            REGULATION_CHUNK_ALREADY_EXISTS,
+            detail="duplicate chunk_id in bulk request",
+        )

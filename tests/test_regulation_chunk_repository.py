@@ -1,6 +1,7 @@
-"""regulation_chunk repository가 ORM 모델에 값을 올바르게 매핑하는지 검증하는 테스트 파일입니다."""
+"""regulation_chunk repository가 조회/저장 매핑을 올바르게 처리하는지 검증하는 테스트 파일입니다."""
 
 from app.repositories.regulation_chunk_repository import create_regulation_chunk
+from app.repositories.regulation_chunk_repository import find_existing_chunk_ids
 from app.schemas.regulation_chunk import RegulationChunkCreateRequest
 
 
@@ -20,6 +21,23 @@ class FakeSession:
 
     def refresh(self, value) -> None:
         self.refresh_called = True
+
+    def execute(self, _statement):
+        class Result:
+            def __init__(self, chunk_ids):
+                self._chunk_ids = chunk_ids
+
+            def scalars(self):
+                class Scalars:
+                    def __init__(self, chunk_ids):
+                        self._chunk_ids = chunk_ids
+
+                    def all(self):
+                        return self._chunk_ids
+
+                return Scalars(self._chunk_ids)
+
+        return Result(["chunk-1", "chunk-3"])
 
 
 def test_create_regulation_chunk_maps_document_id_to_model() -> None:
@@ -51,3 +69,12 @@ def test_create_regulation_chunk_maps_document_id_to_model() -> None:
     assert regulation_chunk.chunk_id == "dorm-rule-001-03"
     assert db.flush_called is True
     assert db.refresh_called is True
+
+
+def test_find_existing_chunk_ids_returns_existing_values() -> None:
+    # 벌크 적재 전에 DB 중복 체크를 한 번의 조회로 가져오는지 확인합니다.
+    db = FakeSession()
+
+    existing_chunk_ids = find_existing_chunk_ids(db, ["chunk-1", "chunk-2", "chunk-3"])
+
+    assert existing_chunk_ids == {"chunk-1", "chunk-3"}

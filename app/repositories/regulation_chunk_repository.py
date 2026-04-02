@@ -16,6 +16,16 @@ def find_by_chunk_id(db: Session, chunk_id: str) -> Optional[RegulationChunk]:
     return db.execute(statement).scalar_one_or_none()
 
 
+def find_existing_chunk_ids(db: Session, chunk_ids: list[str]) -> set[str]:
+    """여러 chunk_id 중 이미 DB에 존재하는 값을 한 번의 조회로 가져옵니다."""
+
+    if not chunk_ids:
+        return set()
+
+    statement = select(RegulationChunk.chunk_id).where(RegulationChunk.chunk_id.in_(chunk_ids))
+    return set(db.execute(statement).scalars().all())
+
+
 def create_regulation_chunk(
     db: Session,
     payload: RegulationChunkCreateRequest,

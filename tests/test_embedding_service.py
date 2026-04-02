@@ -11,6 +11,7 @@ from app.core.error_codes import OPENAI_API_ERROR
 from app.core.error_codes import OPENAI_API_KEY_MISSING
 from app.core.exceptions import AppException
 from app.services.embedding_service import create_embedding
+from app.services.embedding_service import create_embeddings_batch
 
 
 class FakeClient:
@@ -73,7 +74,7 @@ def test_create_embedding_returns_embedding(monkeypatch: pytest.MonkeyPatch) -> 
     assert len(embedding) == 1536
     assert embedding[0] == 0.1
     assert client.last_json == {
-        "input": "생활관: 본관",
+        "input": ["생활관: 본관"],
         "model": "text-embedding-3-small",
         "dimensions": 1536,
     }
@@ -135,3 +136,35 @@ def test_create_embedding_raises_for_invalid_json_response(monkeypatch: pytest.M
         create_embedding("생활관: 본관", client=FakeClient(response=InvalidJsonResponse()))
 
     assert exc_info.value.error_code == INVALID_EMBEDDING_RESPONSE
+
+
+def test_create_embeddings_batch_returns_embeddings(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 벌크 적재에서는 여러 텍스트를 한 번의 OpenAI 호출로 보내야 합니다.
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+    response = httpx.Response(
+        status_code=200,
+        request=request,
+        json={
+            "data": [
+                {"embedding": [0.1] * 1536},
+                {"embedding": [0.2] * 1536},
+            ]
+        },
+    )
+    client = FakeClient(response=response)
+
+    embeddings = create_embeddings_batch(["첫 번째", "두 번째"], client=client)
+
+    assert len(embeddings) == 2
+    assert embeddings[0][0] == 0.1
+    assert embeddings[1][0] == 0.2
+    assert client.last_json == {
+        "input": ["첫 번째", "두 번째"],
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }

@@ -18,12 +18,24 @@ from app.core.exceptions import AppException
 def create_embedding(text: str, client: Optional[httpx.Client] = None) -> list[float]:
     """주어진 텍스트를 OpenAI 임베딩으로 변환하고 벡터 길이까지 검증합니다."""
 
+    return create_embeddings_batch([text], client=client)[0]
+
+
+def create_embeddings_batch(
+    texts: list[str],
+    client: Optional[httpx.Client] = None,
+) -> list[list[float]]:
+    """여러 텍스트를 한 번의 OpenAI 호출로 임베딩해 배치 적재 성능을 높입니다."""
+
     settings = get_settings()
     if not settings.openai_api_key:
         raise AppException(OPENAI_API_KEY_MISSING)
 
+    if not texts:
+        return []
+
     payload = {
-        "input": text,
+        "input": texts,
         "model": settings.openai_embedding_model,
         "dimensions": settings.openai_embedding_dimension,
     }
@@ -46,7 +58,7 @@ def create_embedding(text: str, client: Optional[httpx.Client] = None) -> list[f
         except ValueError as exc:
             raise AppException(INVALID_EMBEDDING_RESPONSE) from exc
 
-        return _parse_embedding_response(response_payload, settings.openai_embedding_dimension)
+        return _parse_embeddings_response(response_payload, settings.openai_embedding_dimension)
     except httpx.TimeoutException as exc:
         raise AppException(OPENAI_API_TIMEOUT) from exc
     except httpx.HTTPStatusError as exc:
@@ -58,24 +70,31 @@ def create_embedding(text: str, client: Optional[httpx.Client] = None) -> list[f
             http_client.close()
 
 
-def _parse_embedding_response(payload: dict[str, Any], expected_dimension: int) -> list[float]:
-    """OpenAI 응답 JSON에서 실제 embedding 배열만 꺼내고 형식을 검증합니다."""
+def _parse_embeddings_response(payload: dict[str, Any], expected_dimension: int) -> list[list[float]]:
+    """OpenAI 응답 JSON에서 임베딩 배열 목록을 꺼내고 형식을 검증합니다."""
 
     data = payload.get("data")
     if not isinstance(data, list) or not data:
         raise AppException(INVALID_EMBEDDING_RESPONSE)
 
-    embedding = data[0].get("embedding")
-    if not isinstance(embedding, list) or not embedding:
-        raise AppException(INVALID_EMBEDDING_RESPONSE)
+    embeddings: list[list[float]] = []
+    for item in data:
+        if not isinstance(item, dict):
+            raise AppException(INVALID_EMBEDDING_RESPONSE)
 
-    if len(embedding) != expected_dimension:
-        raise AppException(EMBEDDING_DIMENSION_MISMATCH)
+        embedding = item.get("embedding")
+        if not isinstance(embedding, list) or not embedding:
+            raise AppException(INVALID_EMBEDDING_RESPONSE)
 
-    try:
-        return [float(value) for value in embedding]
-    except (TypeError, ValueError) as exc:
-        raise AppException(INVALID_EMBEDDING_RESPONSE) from exc
+        if len(embedding) != expected_dimension:
+            raise AppException(EMBEDDING_DIMENSION_MISMATCH)
+
+        try:
+            embeddings.append([float(value) for value in embedding])
+        except (TypeError, ValueError) as exc:
+            raise AppException(INVALID_EMBEDDING_RESPONSE) from exc
+
+    return embeddings
 
 
 def _extract_http_error_message(response: httpx.Response) -> str:

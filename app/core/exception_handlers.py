@@ -1,5 +1,6 @@
 from typing import Any
 
+from fastapi.encoders import jsonable_encoder
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -43,7 +44,7 @@ def add_exception_handlers(app: FastAPI) -> None:
             status_code=VALIDATION_ERROR.status,
             message=VALIDATION_ERROR.message,
             error_code=VALIDATION_ERROR.code,
-            data={"errors": exc.errors()},
+            data={"errors": jsonable_encoder(exc.errors())},
         )
 
     @app.exception_handler(HTTPException)

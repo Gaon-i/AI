@@ -101,6 +101,43 @@ def test_regulation_chunk_bulk_create_request_requires_items() -> None:
         RegulationChunkBulkCreateRequest(items=[])
 
 
+def test_regulation_chunk_bulk_create_request_limits_items_to_twenty() -> None:
+    # 벌크 적재는 최대 20개까지만 허용해 외부 임베딩 API와 서버 부하를 제어합니다.
+    with pytest.raises(ValidationError):
+        RegulationChunkBulkCreateRequest(
+            items=[
+                RegulationChunkCreateRequest(
+                    document_id=f"dorm-rule-{index}",
+                    chunk_id=f"dorm-rule-{index}-01",
+                    chunk_index=index,
+                    title="외박 신청",
+                    content="외박은 사전에 신청해야 한다.",
+                    source_type="official",
+                )
+                for index in range(21)
+            ]
+        )
+
+
+def test_regulation_chunk_bulk_create_request_accepts_twenty_items() -> None:
+    # 상한선인 20개는 정상 요청으로 받아들여져야 합니다.
+    payload = RegulationChunkBulkCreateRequest(
+        items=[
+            RegulationChunkCreateRequest(
+                document_id=f"dorm-rule-{index}",
+                chunk_id=f"dorm-rule-{index}-01",
+                chunk_index=index,
+                title="외박 신청",
+                content="외박은 사전에 신청해야 한다.",
+                source_type="official",
+            )
+            for index in range(20)
+        ]
+    )
+
+    assert len(payload.items) == 20
+
+
 def test_regulation_chunk_error_codes_match_expected_contract() -> None:
     # 프론트/클라이언트가 의존할 핵심 에러 코드 이름과 상태값이 바뀌지 않도록 고정합니다.
     assert error_codes.REGULATION_CHUNK_ALREADY_EXISTS.code == "REGULATION_CHUNK_ALREADY_EXISTS"

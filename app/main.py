@@ -26,7 +26,13 @@ def create_app() -> FastAPI:
                     "서버와 데이터베이스 상태를 점검하는 API입니다. "
                     "배포 후 상태 확인, 로컬 개발 환경 점검, DB 연결 문제 확인에 사용합니다."
                 ),
-            }
+            },
+            {
+                "name": "admin-regulation-chunks",
+                "description": (
+                    "관리자가 규정 청크를 적재하고 임베딩을 생성할 때 사용하는 API입니다."
+                ),
+            },
         ],
     )
 

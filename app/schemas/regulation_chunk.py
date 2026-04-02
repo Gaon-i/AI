@@ -80,7 +80,7 @@ class RegulationChunkCreateResult(BaseModel):
 class RegulationChunkBulkCreateRequest(BaseModel):
     """벌크 생성용 요청 바디입니다."""
 
-    items: list[RegulationChunkCreateRequest] = Field(min_length=1)
+    items: list[RegulationChunkCreateRequest] = Field(min_length=1, max_length=20)
 
 
 class RegulationChunkBulkCreateItemResult(BaseModel):

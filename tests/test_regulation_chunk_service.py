@@ -3,8 +3,10 @@
 import pytest
 
 from app.core.error_codes import REGULATION_CHUNK_ALREADY_EXISTS
+from app.core.error_codes import REGULATION_CHUNK_BULK_CREATE_FAILED
 from app.core.error_codes import REGULATION_CHUNK_CREATE_FAILED
 from app.core.exceptions import AppException
+from app.schemas.regulation_chunk import RegulationChunkBulkCreateRequest
 from app.schemas.regulation_chunk import RegulationChunkCreateRequest
 from app.services import regulation_chunk_service
 
@@ -37,6 +39,28 @@ def build_payload() -> RegulationChunkCreateRequest:
         source="생활관 규정집 2026",
         source_url="https://example.com/rule",
         source_type="official",
+    )
+
+
+def build_bulk_payload(count: int = 2) -> RegulationChunkBulkCreateRequest:
+    # 벌크 테스트에서 여러 청크를 빠르게 만들기 위한 공통 요청 바디입니다.
+    return RegulationChunkBulkCreateRequest(
+        items=[
+            RegulationChunkCreateRequest(
+                document_id="dorm-rule-001",
+                chunk_id=f"dorm-rule-001-{index:02d}",
+                chunk_index=index,
+                category="외박",
+                dormitory="본관",
+                title=f"외박 신청 {index}",
+                content="외박은 사전에 신청해야 한다.",
+                keywords=["외박", "신청"],
+                source="생활관 규정집 2026",
+                source_url="https://example.com/rule",
+                source_type="official",
+            )
+            for index in range(1, count + 1)
+        ]
     )
 
 
@@ -129,5 +153,134 @@ def test_create_regulation_chunk_with_embedding_rolls_back_on_repository_error(
         regulation_chunk_service.create_regulation_chunk_with_embedding(db, payload)
 
     assert exc_info.value.error_code == REGULATION_CHUNK_CREATE_FAILED
+    assert db.commit_called is False
+    assert db.rollback_called is True
+
+
+def test_create_regulation_chunks_with_embeddings_returns_bulk_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 벌크 성공 시 생성 건수와 각 항목 상태가 응답용 결과로 정리돼야 합니다.
+    payload = build_bulk_payload()
+    db = FakeSession()
+
+    class SavedChunk:
+        def __init__(self, chunk_id: str) -> None:
+            self.chunk_id = chunk_id
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "_create_regulation_chunk_record",
+        lambda _db, item: SavedChunk(item.chunk_id),
+    )
+
+    result = regulation_chunk_service.create_regulation_chunks_with_embeddings(db, payload)
+
+    assert result.created_count == 2
+    assert [item.model_dump() for item in result.items] == [
+        {"chunk_id": "dorm-rule-001-01", "status": "created"},
+        {"chunk_id": "dorm-rule-001-02", "status": "created"},
+    ]
+    assert db.commit_called is True
+    assert db.rollback_called is False
+
+
+def test_create_regulation_chunks_with_embeddings_rolls_back_when_one_item_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 벌크 적재 정책은 전체 실패이므로 중간 항목 하나라도 실패하면 전체 rollback 해야 합니다.
+    payload = build_bulk_payload()
+    db = FakeSession()
+    call_count = {"value": 0}
+
+    def fake_create_record(_db, item):
+        call_count["value"] += 1
+        if item.chunk_id == "dorm-rule-001-02":
+            raise AppException(REGULATION_CHUNK_ALREADY_EXISTS)
+        return type("SavedChunk", (), {"chunk_id": item.chunk_id})()
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "_create_regulation_chunk_record",
+        fake_create_record,
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        regulation_chunk_service.create_regulation_chunks_with_embeddings(db, payload)
+
+    assert exc_info.value.error_code == REGULATION_CHUNK_ALREADY_EXISTS
+    assert call_count["value"] == 2
+    assert db.commit_called is False
+    assert db.rollback_called is True
+
+
+def test_create_regulation_chunks_with_embeddings_wraps_unexpected_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 예상치 못한 런타임 예외는 벌크 생성 실패 코드로 한 번 감싸서 반환합니다.
+    payload = build_bulk_payload()
+    db = FakeSession()
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "_create_regulation_chunk_record",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("unexpected failure")),
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        regulation_chunk_service.create_regulation_chunks_with_embeddings(db, payload)
+
+    assert exc_info.value.error_code == REGULATION_CHUNK_BULK_CREATE_FAILED
+    assert db.commit_called is False
+    assert db.rollback_called is True
+
+
+def test_create_regulation_chunks_with_embeddings_rejects_duplicate_chunk_id_in_same_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 같은 요청 안에 동일한 chunk_id가 있으면 전체 실패 정책에 따라 rollback 해야 합니다.
+    payload = RegulationChunkBulkCreateRequest(
+        items=[
+            build_payload(),
+            build_payload(),
+        ]
+    )
+    db = FakeSession()
+    persisted_chunk_ids = set()
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_embedding",
+        lambda _text: [0.1] * 1536,
+    )
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "find_by_chunk_id",
+        lambda _db, chunk_id: object() if chunk_id in persisted_chunk_ids else None,
+    )
+
+    def fake_create_regulation_chunk(**kwargs):
+        persisted_chunk_ids.add(kwargs["payload"].chunk_id)
+        return type(
+            "SavedChunk",
+            (),
+            {
+                "regulation_chunk_id": 1,
+                "document_id": kwargs["payload"].document_id,
+                "chunk_id": kwargs["payload"].chunk_id,
+                "chunk_index": kwargs["payload"].chunk_index,
+            },
+        )()
+
+    monkeypatch.setattr(
+        regulation_chunk_service,
+        "create_regulation_chunk",
+        fake_create_regulation_chunk,
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        regulation_chunk_service.create_regulation_chunks_with_embeddings(db, payload)
+
+    assert exc_info.value.error_code == REGULATION_CHUNK_ALREADY_EXISTS
     assert db.commit_called is False
     assert db.rollback_called is True

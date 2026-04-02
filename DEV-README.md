@@ -49,6 +49,8 @@ Gaon-i/
     core/
     db/
       models/
+    repositories/
+    schemas/
     services/
   alembic/
   tests/

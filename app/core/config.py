@@ -11,7 +11,11 @@ class Settings(BaseSettings):
     app_name: str = "gaon-i-ai"
     api_v1_prefix: str = "/api/v1"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/gaon_i"
+    admin_api_token: Optional[str] = None
     openai_api_key: Optional[str] = None
+    openai_embedding_model: str = "text-embedding-3-small"
+    openai_embedding_dimension: int = 1536
+    openai_timeout_seconds: float = 10.0
 
 
 @lru_cache

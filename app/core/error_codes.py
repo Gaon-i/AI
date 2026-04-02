@@ -82,6 +82,16 @@ OPENAI_API_KEY_MISSING = ErrorCode(
     message="openai api key is missing",
     status=500,
 )
+ADMIN_API_TOKEN_MISSING = ErrorCode(
+    code="ADMIN_API_TOKEN_MISSING",
+    message="admin api token is missing",
+    status=500,
+)
+ADMIN_API_TOKEN_INVALID = ErrorCode(
+    code="ADMIN_API_TOKEN_INVALID",
+    message="invalid admin api token",
+    status=403,
+)
 OPENAI_API_TIMEOUT = ErrorCode(
     code="OPENAI_API_TIMEOUT",
     message="openai api timeout",

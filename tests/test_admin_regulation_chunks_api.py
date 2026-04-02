@@ -27,6 +27,11 @@ def build_request_payload() -> dict:
     }
 
 
+def build_admin_headers(token: str = "test-admin-token") -> dict[str, str]:
+    # 관리자 API 테스트는 공통 토큰 헤더를 기본값으로 재사용합니다.
+    return {"X-Admin-Token": token}
+
+
 def build_bulk_request_payload(count: int = 2) -> dict:
     # 벌크 API 테스트에서 여러 청크를 한 번에 보내기 위한 공통 요청 바디입니다.
     return {
@@ -69,7 +74,11 @@ def test_create_regulation_chunk_api_returns_created_response(
         fake_create_regulation_chunk_with_embedding,
     )
 
-    response = client.post("/api/v1/admin/regulation-chunks", json=build_request_payload())
+    response = client.post(
+        "/api/v1/admin/regulation-chunks",
+        json=build_request_payload(),
+        headers=build_admin_headers(),
+    )
 
     assert response.status_code == 201
     assert response.json() == {
@@ -100,7 +109,11 @@ def test_create_regulation_chunk_api_returns_common_error_response(
         raise_duplicate_chunk,
     )
 
-    response = client.post("/api/v1/admin/regulation-chunks", json=build_request_payload())
+    response = client.post(
+        "/api/v1/admin/regulation-chunks",
+        json=build_request_payload(),
+        headers=build_admin_headers(),
+    )
 
     assert response.status_code == 409
     assert response.json() == {
@@ -118,7 +131,11 @@ def test_create_regulation_chunk_api_returns_validation_error_for_invalid_body(
     payload = build_request_payload()
     payload["document_id"] = "   "
 
-    response = client.post("/api/v1/admin/regulation-chunks", json=payload)
+    response = client.post(
+        "/api/v1/admin/regulation-chunks",
+        json=payload,
+        headers=build_admin_headers(),
+    )
 
     assert response.status_code == 422
     body = response.json()
@@ -148,7 +165,11 @@ def test_create_regulation_chunks_bulk_api_returns_created_response(
         fake_create_regulation_chunks_with_embeddings,
     )
 
-    response = client.post("/api/v1/admin/regulation-chunks/bulk", json=build_bulk_request_payload())
+    response = client.post(
+        "/api/v1/admin/regulation-chunks/bulk",
+        json=build_bulk_request_payload(),
+        headers=build_admin_headers(),
+    )
 
     assert response.status_code == 201
     assert response.json() == {
@@ -179,7 +200,11 @@ def test_create_regulation_chunks_bulk_api_returns_common_error_response(
         raise_duplicate_chunk,
     )
 
-    response = client.post("/api/v1/admin/regulation-chunks/bulk", json=build_bulk_request_payload())
+    response = client.post(
+        "/api/v1/admin/regulation-chunks/bulk",
+        json=build_bulk_request_payload(),
+        headers=build_admin_headers(),
+    )
 
     assert response.status_code == 409
     assert response.json() == {
@@ -197,6 +222,7 @@ def test_create_regulation_chunks_bulk_api_rejects_more_than_twenty_items(
     response = client.post(
         "/api/v1/admin/regulation-chunks/bulk",
         json=build_bulk_request_payload(count=21),
+        headers=build_admin_headers(),
     )
 
     assert response.status_code == 422
@@ -205,3 +231,71 @@ def test_create_regulation_chunks_bulk_api_rejects_more_than_twenty_items(
     assert body["message"] == "request validation failed"
     assert body["error_code"] == "VALIDATION_ERROR"
     assert body["data"]["errors"]
+
+
+def test_admin_regulation_chunks_api_requires_admin_token(client: TestClient) -> None:
+    # 관리자 토큰이 없으면 관리자 API는 인증 실패로 막혀야 합니다.
+    response = client.post("/api/v1/admin/regulation-chunks", json=build_request_payload())
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "status": 401,
+        "message": "admin token required",
+        "data": None,
+        "error_code": "UNAUTHORIZED",
+    }
+
+
+def test_admin_regulation_chunks_api_rejects_invalid_admin_token(client: TestClient) -> None:
+    # 잘못된 토큰으로는 관리자 API를 호출할 수 없어야 합니다.
+    response = client.post(
+        "/api/v1/admin/regulation-chunks",
+        json=build_request_payload(),
+        headers=build_admin_headers(token="wrong-token"),
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {
+        "status": 403,
+        "message": "invalid admin api token",
+        "data": None,
+        "error_code": "ADMIN_API_TOKEN_INVALID",
+    }
+
+
+def test_admin_regulation_chunks_bulk_api_requires_admin_token(client: TestClient) -> None:
+    # router-level dependency가 bulk 엔드포인트에도 동일하게 적용되는지 확인합니다.
+    response = client.post("/api/v1/admin/regulation-chunks/bulk", json=build_bulk_request_payload())
+
+    assert response.status_code == 401
+    assert response.json() == {
+        "status": 401,
+        "message": "admin token required",
+        "data": None,
+        "error_code": "UNAUTHORIZED",
+    }
+
+
+def test_admin_regulation_chunks_api_returns_server_error_when_admin_token_setting_is_missing(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    # 서버 설정이 잘못된 경우도 공통 에러 응답으로 드러나도록 고정합니다.
+    from app.core.config import get_settings
+
+    monkeypatch.delenv("ADMIN_API_TOKEN", raising=False)
+    get_settings.cache_clear()
+
+    response = client.post(
+        "/api/v1/admin/regulation-chunks",
+        json=build_request_payload(),
+        headers=build_admin_headers(),
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "status": 500,
+        "message": "admin api token is missing",
+        "data": None,
+        "error_code": "ADMIN_API_TOKEN_MISSING",
+    }

@@ -5,6 +5,7 @@ from fastapi import Depends
 from fastapi import status
 from sqlalchemy.orm import Session
 
+from app.api.dependencies.admin_auth import require_admin_token
 from app.db.session import get_db
 from app.schemas.common import ApiResponse
 from app.schemas.regulation_chunk import RegulationChunkBulkCreateRequest
@@ -17,6 +18,7 @@ from app.services.regulation_chunk_service import create_regulation_chunk_with_e
 router = APIRouter(
     prefix="/admin/regulation-chunks",
     tags=["admin-regulation-chunks"],
+    dependencies=[Depends(require_admin_token)],
 )
 
 

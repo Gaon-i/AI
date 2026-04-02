@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: gaon-i-postgres
+    environment:
+      POSTGRES_DB: gaon_i
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - gaon_i_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  gaon_i_postgres_data:

@@ -1,3 +1,3 @@
-from app.db.models.document_chunk import DocumentChunk
+from app.db.models.regulation_chunk import RegulationChunk
 
-__all__ = ["DocumentChunk"]
+__all__ = ["RegulationChunk"]

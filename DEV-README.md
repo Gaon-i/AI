@@ -28,6 +28,18 @@ uvicorn app.main:app --reload
 pytest
 ```
 
+개발용 PostgreSQL 실행:
+
+```bash
+docker compose up -d
+```
+
+마이그레이션 적용:
+
+```bash
+alembic upgrade head
+```
+
 ## Initial Structure
 
 ```text

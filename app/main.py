@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 
+from app.api.health import router as health_router
 from app.api.router import api_router
 from app.core.config import get_settings
 
@@ -10,13 +11,26 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
+        summary="Gaon-i 생활관 AI 서버",
+        description=(
+            "Gaon-i 생활관 AI 서버의 기본 API 문서입니다.\n\n"
+        ),
+        contact={
+            "name": "Gaon-i AI",
+        },
+        openapi_tags=[
+            {
+                "name": "health",
+                "description": (
+                    "서버와 데이터베이스 상태를 점검하는 API입니다. "
+                    "배포 후 상태 확인, 로컬 개발 환경 점검, DB 연결 문제 확인에 사용합니다."
+                ),
+            }
+        ],
     )
 
+    app.include_router(health_router)
     app.include_router(api_router, prefix=settings.api_v1_prefix)
-
-    @app.get("/health", tags=["health"])
-    def health_check() -> dict[str, str]:
-        return {"status": "ok"}
 
     return app
 

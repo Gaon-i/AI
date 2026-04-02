@@ -10,21 +10,14 @@ def test_health(client: TestClient) -> None:
     assert response.json() == {"status": "ok"}
 
 
-def test_api_health(client: TestClient) -> None:
-    response = client.get("/api/v1/health")
+def test_db_health(client: TestClient) -> None:
+    response = client.get("/health/db")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_api_db_health(client: TestClient) -> None:
-    response = client.get("/api/v1/health/db")
-
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-
-
-def test_api_db_health_returns_503_when_connection_fails(
+def test_db_health_returns_503_when_connection_fails(
     client: TestClient,
     monkeypatch,
 ) -> None:
@@ -34,7 +27,7 @@ def test_api_db_health_returns_503_when_connection_fails(
 
     monkeypatch.setattr(health_module, "check_db_connection", raise_connection_error)
 
-    response = client.get("/api/v1/health/db")
+    response = client.get("/health/db")
 
     assert response.status_code == 503
     assert response.json() == {"detail": "database unavailable"}

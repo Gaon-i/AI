@@ -7,14 +7,24 @@ def test_health(client: TestClient) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {
+        "status": 200,
+        "message": "success",
+        "data": {"status": "ok"},
+        "error_code": None,
+    }
 
 
 def test_db_health(client: TestClient) -> None:
     response = client.get("/health/db")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {
+        "status": 200,
+        "message": "success",
+        "data": {"status": "ok"},
+        "error_code": None,
+    }
 
 
 def test_db_health_returns_503_when_connection_fails(
@@ -30,4 +40,9 @@ def test_db_health_returns_503_when_connection_fails(
     response = client.get("/health/db")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "database unavailable"}
+    assert response.json() == {
+        "status": 503,
+        "message": "database unavailable",
+        "data": None,
+        "error_code": "DATABASE_UNAVAILABLE",
+    }

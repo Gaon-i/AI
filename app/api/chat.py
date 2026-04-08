@@ -13,10 +13,8 @@ router = APIRouter(prefix="/ai/chat", tags=["chat"])
 
 @router.post("", response_model=ChatResponse)
 def chat(request: ChatRequest, db: Session = Depends(get_db)):
-    print("1. request:", request)
 
     is_valid, normalized_question = validate_question(request.question)
-    print("2. validator:", is_valid, normalized_question)
 
     if not is_valid:
         return ChatResponse(
@@ -25,7 +23,6 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         )
 
     query_embedding = create_query_embedding(normalized_question)
-    print("3. embedding 생성 완료")
 
     chunks = search_similar_chunks(
         db=db,
@@ -33,10 +30,8 @@ def chat(request: ChatRequest, db: Session = Depends(get_db)):
         dormitory=request.dormitory,
         top_k=3
     )
-    print("4. 검색 결과:", chunks)
 
     answer, source_url = generate_answer(normalized_question, chunks)
-    print("5. 답변 생성 완료")
 
     return ChatResponse(
         answer=answer,

@@ -1,4 +1,3 @@
-import os
 
 from app.core.config import get_settings
 from openai import OpenAI
@@ -30,7 +29,7 @@ def generate_answer(question: str, chunks: list[dict]) -> tuple[str, str]:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        model="gpt-4o-mini",
         temperature=0.3,
         messages=[
             {"role": "user", "content": prompt}

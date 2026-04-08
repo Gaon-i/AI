@@ -20,7 +20,7 @@ def summarize_notice(title: str, content: str) -> str:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4.1-mini",
+        model="gpt-4o-mini",
         temperature=0.3,
         messages=[
             {"role": "user", "content": prompt}

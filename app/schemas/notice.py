@@ -20,7 +20,11 @@ class NoticeRequest(BaseModel):
 
 
 class NoticeResponse(BaseModel):
+    title: str
     summary: str
+    target_info: Optional[str] = None
+    schedule_info: Optional[str] = None
+    caution_info: Optional[str] = None
 
 
 class NoticeSummaryData(BaseModel):
@@ -67,7 +71,6 @@ class NoticeUpsertPayload(BaseModel):
 class NoticeListItem(BaseModel):
     notice_id: int
     title: str
-    content: str
     source_url: str
     posted_at: datetime
     summary: Optional[str] = None
@@ -80,3 +83,10 @@ class NoticeListResult(BaseModel):
     weekly_count: int
     monthly_count: int
     items: list[NoticeListItem]
+
+
+class NoticeSyncResult(BaseModel):
+    crawled_count: int
+    saved_count: int
+    summarized_count: int
+    deleted_count: int

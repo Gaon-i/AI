@@ -113,7 +113,6 @@ def _build_notice_list_item(notice: Notice, notice_summary: Optional[NoticeSumma
     return NoticeListItem(
         notice_id=notice.notice_id,
         title=notice.title,
-        content=notice.content,
         source_url=notice.source_url,
         posted_at=notice.posted_at,
         summary=notice_summary.summary_text if notice_summary else None,

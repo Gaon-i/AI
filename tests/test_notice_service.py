@@ -202,6 +202,38 @@ def test_get_recent_notice_list_wraps_query_error(monkeypatch: pytest.MonkeyPatc
     assert exc_info.value.error_code == NOTICE_QUERY_FAILED
 
 
+def test_get_recent_notice_list_counts_notices_using_repository(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = FakeSession()
+    now = datetime(2026, 4, 12, 12, 0, 0)
+
+    monkeypatch.setattr(
+        notice_service,
+        "list_notices_with_summaries_since",
+        lambda *_args: [],
+    )
+
+    captured_cutoffs: list[datetime] = []
+
+    def fake_count_notices_since(_db, posted_since: datetime) -> int:
+        captured_cutoffs.append(posted_since)
+        return 0
+
+    monkeypatch.setattr(
+        notice_service,
+        "count_notices_since",
+        fake_count_notices_since,
+    )
+
+    result = notice_service.get_recent_notice_list(db, now)
+
+    assert result.weekly_count == 0
+    assert result.monthly_count == 0
+    assert captured_cutoffs == [
+        datetime(2026, 4, 5, 12, 0, 0),
+        datetime(2026, 3, 13, 12, 0, 0),
+    ]
+
+
 def test_delete_expired_notices_deletes_summaries_then_notices(monkeypatch: pytest.MonkeyPatch) -> None:
     db = FakeSession()
     call_order: list[str] = []

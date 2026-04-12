@@ -5,6 +5,7 @@ from datetime import timezone
 from typing import Optional
 
 from sqlalchemy import delete
+from sqlalchemy import func
 from sqlalchemy import outerjoin
 from sqlalchemy import select
 from sqlalchemy.orm import Session

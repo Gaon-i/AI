@@ -16,6 +16,7 @@ def test_environment(monkeypatch: pytest.MonkeyPatch) -> Generator[None, None, N
     monkeypatch.setenv("API_V1_PREFIX", "/api/v1")
     monkeypatch.setenv("DATABASE_URL", "sqlite+pysqlite:///:memory:")
     monkeypatch.setenv("ADMIN_API_TOKEN", "test-admin-token")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
     get_settings.cache_clear()
     get_engine.cache_clear()

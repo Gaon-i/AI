@@ -3,10 +3,13 @@
 from datetime import datetime
 from typing import Callable
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy.orm import Session
 
+from app.repositories.notice_repository import find_notice_by_source_url
+from app.repositories.notice_repository import find_notice_summary_by_notice_id
 from app.schemas.notice import NoticeListResult
 from app.schemas.notice import NoticeSummaryData
 from app.schemas.notice import NoticeSyncResult
@@ -38,16 +41,26 @@ def sync_recent_notices(
     summarize = summarize_fn or summarize_notice
 
     for payload in crawled_payloads:
+        existing_notice = find_notice_by_source_url(db, payload.source_url)
         notice = upsert_notice(db, payload)
         saved_count += 1
 
-        summary_data = summarize(payload.title, payload.content)
-        upsert_notice_summary_for_notice(
-            db=db,
-            notice_id=notice.notice_id,
-            payload=summary_data,
+        should_refresh_summary = (
+            existing_notice is None
+            or existing_notice.title != payload.title
+            or existing_notice.content != payload.content
+            or existing_notice.posted_at != payload.posted_at
+            or find_notice_summary_by_notice_id(db, notice.notice_id) is None
         )
-        summarized_count += 1
+
+        if should_refresh_summary:
+            summary_data = summarize(payload.title, payload.content)
+            upsert_notice_summary_for_notice(
+                db=db,
+                notice_id=notice.notice_id,
+                payload=summary_data,
+            )
+            summarized_count += 1
 
     deleted_count = delete_expired_notices(db, now=now, retention_days=retention_days)
 
@@ -63,3 +76,9 @@ def get_recent_notices_for_api(db: Session, now: datetime) -> NoticeListResult:
     """공지 API가 사용할 최신 공지 목록 조회 래퍼입니다."""
 
     return get_recent_notice_list(db=db, now=now)
+
+
+def get_current_kst_time() -> datetime:
+    """운영 기준 시각을 KST 기준 naive datetime으로 맞춥니다."""
+
+    return datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)

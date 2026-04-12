@@ -5,6 +5,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+
 from app.db.models.regulation_chunk import RegulationChunk
 from app.schemas.regulation_chunk import RegulationChunkCreateRequest
 
@@ -53,3 +54,51 @@ def create_regulation_chunk(
     db.flush()
     db.refresh(regulation_chunk)
     return regulation_chunk
+
+
+# feat#6에서 추가(조회용 함수 추가)
+from sqlalchemy import text
+
+
+def search_similar_chunks(
+    db: Session,
+    query_embedding: list[float],
+    dormitory: str,
+    top_k: int = 3,
+):
+    """질문 임베딩과 유사한 regulation_chunk를 pgvector로 검색합니다."""
+
+    embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+    sql = text(
+        """
+        SELECT
+            chunk_id,
+            content,
+            source_url,
+            1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
+        FROM regulation_chunk
+        WHERE dormitory = :dormitory OR dormitory IS NULL
+        ORDER BY embedding <=> CAST(:embedding AS vector)
+        LIMIT :top_k
+        """
+    )
+
+    result = db.execute(
+        sql,
+        {
+            "embedding": embedding_str,
+            "dormitory": dormitory,
+            "top_k": top_k,
+        },
+    ).mappings().all()
+
+    return [
+        {
+            "chunk_id": row.chunk_id,
+            "content": row.content,
+            "source_url": row.source_url,
+            "similarity": float(row.similarity),
+        }
+        for row in result
+    ]

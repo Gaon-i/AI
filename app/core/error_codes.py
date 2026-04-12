@@ -147,3 +147,23 @@ REGULATION_CHUNK_BULK_CREATE_FAILED = ErrorCode(
     message="failed to create regulation chunks",
     status=500,
 )
+NOTICE_SAVE_FAILED = ErrorCode(
+    code="NOTICE_SAVE_FAILED",
+    message="failed to save notice",
+    status=500,
+)
+NOTICE_SUMMARY_SAVE_FAILED = ErrorCode(
+    code="NOTICE_SUMMARY_SAVE_FAILED",
+    message="failed to save notice summary",
+    status=500,
+)
+NOTICE_QUERY_FAILED = ErrorCode(
+    code="NOTICE_QUERY_FAILED",
+    message="failed to query notices",
+    status=500,
+)
+NOTICE_DELETE_FAILED = ErrorCode(
+    code="NOTICE_DELETE_FAILED",
+    message="failed to delete expired notices",
+    status=500,
+)

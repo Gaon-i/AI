@@ -3,11 +3,11 @@
 from datetime import datetime
 from typing import Callable
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.time_utils import get_current_kst_time as get_current_kst_time_value
 from app.repositories.notice_repository import find_notice_by_source_url
 from app.repositories.notice_repository import find_notice_summary_by_notice_id
 from app.schemas.notice import NoticeListResult
@@ -16,8 +16,8 @@ from app.schemas.notice import NoticeSyncResult
 from app.services.notice_crawler import crawl_recent_notice_payloads
 from app.services.notice_service import delete_expired_notices
 from app.services.notice_service import get_recent_notice_list
-from app.services.notice_service import upsert_notice
-from app.services.notice_service import upsert_notice_summary_for_notice
+from app.services.notice_service import upsert_notice_in_transaction
+from app.services.notice_service import upsert_notice_summary_for_notice_in_transaction
 from app.services.summarizer import summarize_notice
 
 
@@ -42,27 +42,33 @@ def sync_recent_notices(
 
     for payload in crawled_payloads:
         existing_notice = find_notice_by_source_url(db, payload.source_url)
-        notice = upsert_notice(db, payload)
-        saved_count += 1
-
         should_refresh_summary = (
             existing_notice is None
             or existing_notice.title != payload.title
             or existing_notice.content != payload.content
             or existing_notice.posted_at != payload.posted_at
-            or find_notice_summary_by_notice_id(db, notice.notice_id) is None
         )
 
-        if should_refresh_summary:
+        notice = upsert_notice_in_transaction(db, payload)
+        saved_count += 1
+
+        existing_summary = find_notice_summary_by_notice_id(db, notice.notice_id)
+
+        if should_refresh_summary or existing_summary is None:
             summary_data = summarize(payload.title, payload.content)
-            upsert_notice_summary_for_notice(
+            upsert_notice_summary_for_notice_in_transaction(
                 db=db,
                 notice_id=notice.notice_id,
                 payload=summary_data,
             )
             summarized_count += 1
 
-    deleted_count = delete_expired_notices(db, now=now, retention_days=retention_days)
+    try:
+        db.commit()
+        deleted_count = delete_expired_notices(db, now=now, retention_days=retention_days)
+    except Exception:
+        db.rollback()
+        raise
 
     return NoticeSyncResult(
         crawled_count=len(crawled_payloads),
@@ -81,4 +87,4 @@ def get_recent_notices_for_api(db: Session, now: datetime) -> NoticeListResult:
 def get_current_kst_time() -> datetime:
     """운영 기준 시각을 KST 기준 naive datetime으로 맞춥니다."""
 
-    return datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)
+    return get_current_kst_time_value()

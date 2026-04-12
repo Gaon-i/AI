@@ -4,10 +4,10 @@ from fastapi import APIRouter
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from app.core.time_utils import get_current_kst_time
 from app.db.session import get_db
 from app.schemas.notice import NoticeRequest, NoticeResponse
 from app.schemas.notice import NoticeListResult
-from app.services.notice_sync_service import get_current_kst_time
 from app.services.notice_sync_service import get_recent_notices_for_api
 from app.services.summarizer import summarize_notice
 

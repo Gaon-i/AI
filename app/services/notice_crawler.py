@@ -67,8 +67,12 @@ def crawl_recent_notice_payloads(
 
         payloads: list[NoticeUpsertPayload] = []
         for entry in entries:
-            detail_html = fetch_html(http_client, entry.source_url)
-            content = parse_notice_detail_page(detail_html, title=entry.title)
+            try:
+                detail_html = fetch_html(http_client, entry.source_url)
+                content = parse_notice_detail_page(detail_html, title=entry.title)
+            except (httpx.HTTPError, ValueError):
+                # 특정 공지 하나의 상세 파싱 실패가 전체 배치를 막지 않도록 건너뜁니다.
+                continue
             payloads.append(
                 NoticeUpsertPayload(
                     title=entry.title,

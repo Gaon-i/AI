@@ -1,7 +1,6 @@
 """notice 및 notice_summary 테이블의 저장/조회 책임을 분리한 repository 파일입니다."""
 
 from datetime import datetime
-from datetime import timezone
 from typing import Optional
 
 from sqlalchemy import delete
@@ -10,6 +9,7 @@ from sqlalchemy import outerjoin
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.time_utils import get_current_kst_time
 from app.db.models.notice import Notice
 from app.db.models.notice_summary import NoticeSummary
 from app.schemas.notice import NoticeSummaryData
@@ -82,8 +82,8 @@ def update_notice_summary(notice_summary: NoticeSummary, payload: NoticeSummaryD
     notice_summary.schedule_info = payload.schedule_info
     notice_summary.caution_info = payload.caution_info
     notice_summary.generated_model = payload.generated_model
-    # 서비스가 commit 직후 반환해도 concrete timestamp를 바로 쓸 수 있도록 Python 시각을 저장합니다.
-    notice_summary.generated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    # 앱 전체 시각 정책과 일관되게 KST 기준 naive datetime을 저장합니다.
+    notice_summary.generated_at = get_current_kst_time()
     return notice_summary
 
 

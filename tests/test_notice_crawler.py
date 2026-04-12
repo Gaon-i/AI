@@ -171,3 +171,34 @@ def test_crawl_recent_notice_payloads_filters_old_notices_and_fetches_details() 
     ]
     assert all(payload.collected_at == datetime(2026, 4, 12, 12, 0, 0) for payload in payloads)
     assert "https://www.gachon.ac.kr/bbs/dormitory/330/4/artclView.do" not in client.requested_urls
+
+
+def test_crawl_recent_notice_payloads_skips_notice_when_detail_parse_fails() -> None:
+    page_1_url = (
+        "https://www.gachon.ac.kr/dormitory/2351/subview.do"
+        "?mode=list&article.offset=0&articleLimit=2"
+    )
+    client = FakeClient(
+        {
+            page_1_url: """
+            <table><tbody>
+              <tr><td><a href="/bbs/dormitory/330/1/artclView.do">정상 공지</a></td><td>2026.04.10</td></tr>
+              <tr><td><a href="/bbs/dormitory/330/2/artclView.do">실패 공지</a></td><td>2026.04.09</td></tr>
+            </tbody></table>
+            """,
+            "https://www.gachon.ac.kr/bbs/dormitory/330/1/artclView.do": """
+            <div>등록일</div><div>2026.04.10</div><div>정상 공지</div><div>정상 본문</div><div>첨부파일</div>
+            """,
+            "https://www.gachon.ac.kr/bbs/dormitory/330/2/artclView.do": "<html></html>",
+        }
+    )
+
+    payloads = crawl_recent_notice_payloads(
+        now=datetime(2026, 4, 12, 12, 0, 0),
+        retention_days=30,
+        client=client,
+        article_limit=2,
+        max_pages=1,
+    )
+
+    assert [payload.title for payload in payloads] == ["정상 공지"]

@@ -32,10 +32,23 @@ from app.schemas.notice import NoticeUpsertPayload
 def upsert_notice(db: Session, payload: NoticeUpsertPayload) -> Notice:
     """source_url 기준으로 공지를 생성하거나 최신 값으로 갱신합니다."""
 
+    return _upsert_notice(db, payload, commit=True)
+
+
+def upsert_notice_in_transaction(db: Session, payload: NoticeUpsertPayload) -> Notice:
+    """상위 서비스가 트랜잭션을 관리할 때 사용하는 공지 upsert 함수입니다."""
+
+    return _upsert_notice(db, payload, commit=False)
+
+
+def _upsert_notice(db: Session, payload: NoticeUpsertPayload, *, commit: bool) -> Notice:
+    """공지 upsert 공통 구현입니다."""
+
     try:
         existing_notice = find_notice_by_source_url(db, payload.source_url)
         notice = create_notice(db, payload) if existing_notice is None else update_notice(existing_notice, payload)
-        db.commit()
+        if commit:
+            db.commit()
     except Exception as exc:
         db.rollback()
         raise AppException(NOTICE_SAVE_FAILED) from exc
@@ -50,6 +63,28 @@ def upsert_notice_summary_for_notice(
 ) -> NoticeSummary:
     """notice_id 기준으로 요약 row를 생성하거나 갱신합니다."""
 
+    return _upsert_notice_summary_for_notice(db, notice_id, payload, commit=True)
+
+
+def upsert_notice_summary_for_notice_in_transaction(
+    db: Session,
+    notice_id: int,
+    payload: NoticeSummaryData,
+) -> NoticeSummary:
+    """상위 서비스가 트랜잭션을 관리할 때 사용하는 요약 upsert 함수입니다."""
+
+    return _upsert_notice_summary_for_notice(db, notice_id, payload, commit=False)
+
+
+def _upsert_notice_summary_for_notice(
+    db: Session,
+    notice_id: int,
+    payload: NoticeSummaryData,
+    *,
+    commit: bool,
+) -> NoticeSummary:
+    """공지 요약 upsert 공통 구현입니다."""
+
     try:
         existing_summary = find_notice_summary_by_notice_id(db, notice_id)
         notice_summary = (
@@ -57,7 +92,8 @@ def upsert_notice_summary_for_notice(
             if existing_summary is None
             else update_notice_summary(existing_summary, payload)
         )
-        db.commit()
+        if commit:
+            db.commit()
     except Exception as exc:
         db.rollback()
         raise AppException(NOTICE_SUMMARY_SAVE_FAILED) from exc

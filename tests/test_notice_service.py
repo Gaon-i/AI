@@ -103,6 +103,24 @@ def test_upsert_notice_wraps_unexpected_error(monkeypatch: pytest.MonkeyPatch) -
     assert db.rollback_called is True
 
 
+def test_upsert_notice_in_transaction_does_not_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = build_notice_payload()
+    db = FakeSession()
+
+    monkeypatch.setattr(notice_service, "find_notice_by_source_url", lambda *_: None)
+    monkeypatch.setattr(
+        notice_service,
+        "create_notice",
+        lambda *_args: type("SavedNotice", (), {"notice_id": 1})(),
+    )
+
+    notice = notice_service.upsert_notice_in_transaction(db, payload)
+
+    assert notice.notice_id == 1
+    assert db.commit_called is False
+    assert db.rollback_called is False
+
+
 def test_upsert_notice_summary_creates_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = build_summary_payload()
     db = FakeSession()
@@ -139,6 +157,24 @@ def test_upsert_notice_summary_wraps_unexpected_error(monkeypatch: pytest.Monkey
     assert exc_info.value.error_code == NOTICE_SUMMARY_SAVE_FAILED
     assert db.commit_called is False
     assert db.rollback_called is True
+
+
+def test_upsert_notice_summary_in_transaction_does_not_commit(monkeypatch: pytest.MonkeyPatch) -> None:
+    payload = build_summary_payload()
+    db = FakeSession()
+
+    monkeypatch.setattr(notice_service, "find_notice_summary_by_notice_id", lambda *_: None)
+    monkeypatch.setattr(
+        notice_service,
+        "create_notice_summary",
+        lambda *_args: type("SavedSummary", (), {"notice_summary_id": 7})(),
+    )
+
+    notice_summary = notice_service.upsert_notice_summary_for_notice_in_transaction(db, 1, payload)
+
+    assert notice_summary.notice_summary_id == 7
+    assert db.commit_called is False
+    assert db.rollback_called is False
 
 
 def test_get_recent_notice_list_returns_counts_and_items(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,7 +1,7 @@
 """공지사항 동기화 배치를 수동 실행하기 위한 진입점입니다."""
 
 from app.db.session import get_session_factory
-from app.services.notice_sync_service import get_current_kst_time
+from app.core.time_utils import get_current_kst_time
 from app.services.notice_sync_service import sync_recent_notices
 
 

@@ -101,3 +101,12 @@ def test_get_regulation_documents_by_type_api_returns_documents(
         },
         "error_code": None,
     }
+
+
+def test_get_regulation_documents_by_type_api_rejects_blank_query(
+    client: TestClient,
+) -> None:
+    response = client.get("/api/v1/regulations?document_type=   ")
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "VALIDATION_ERROR"

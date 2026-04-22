@@ -41,7 +41,7 @@ def get_regulation_document_types_api(
     summary="규정 문서 타입 기준 문서 조회",
 )
 def get_regulation_documents_by_type_api(
-    document_type: str = Query(min_length=1, max_length=100),
+    document_type: str = Query(min_length=1, max_length=100, pattern=r".*\S.*"),
     db: Session = Depends(get_db),
 ) -> ApiResponse[RegulationLookupResult]:
     result = get_regulation_documents_by_type(db, document_type)

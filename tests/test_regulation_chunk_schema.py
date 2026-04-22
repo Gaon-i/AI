@@ -13,6 +13,7 @@ def test_regulation_chunk_create_request_accepts_valid_payload() -> None:
     # 정상적인 관리자 요청 바디가 그대로 스키마에 적재되는지 확인합니다.
     payload = RegulationChunkCreateRequest(
         document_id="dorm-rule-001",
+        document_version="2026.04",
         chunk_id="dorm-rule-001-03",
         chunk_index=3,
         category="외박",
@@ -26,6 +27,7 @@ def test_regulation_chunk_create_request_accepts_valid_payload() -> None:
     )
 
     assert payload.document_id == "dorm-rule-001"
+    assert payload.document_version == "2026.04"
     assert payload.chunk_id == "dorm-rule-001-03"
     assert payload.source_type == RegulationChunkSourceType.OFFICIAL
     assert str(payload.source_url) == "https://example.com/rule"
@@ -36,6 +38,7 @@ def test_regulation_chunk_create_request_rejects_invalid_source_type() -> None:
     with pytest.raises(ValidationError):
         RegulationChunkCreateRequest(
             document_id="dorm-rule-001",
+            document_version="2026.04",
             chunk_id="dorm-rule-001-03",
             chunk_index=3,
             title="외박 신청",
@@ -49,6 +52,7 @@ def test_regulation_chunk_create_request_rejects_blank_required_text() -> None:
     with pytest.raises(ValidationError):
         RegulationChunkCreateRequest(
             document_id="   ",
+            document_version="   ",
             chunk_id="   ",
             chunk_index=3,
             title="외박 신청",
@@ -61,6 +65,7 @@ def test_regulation_chunk_create_request_normalizes_optional_text_and_keywords()
     # 선택 필드는 trim 및 정규화해서 이후 service/repository가 단순한 값을 받도록 맞춥니다.
     payload = RegulationChunkCreateRequest(
         document_id="  dorm-rule-001  ",
+        document_version="  2026.04  ",
         chunk_id="chunk-1",
         chunk_index=0,
         category="  외박  ",
@@ -73,6 +78,7 @@ def test_regulation_chunk_create_request_normalizes_optional_text_and_keywords()
     )
 
     assert payload.document_id == "dorm-rule-001"
+    assert payload.document_version == "2026.04"
     assert payload.category == "외박"
     assert payload.dormitory is None
     assert payload.title == "외박 신청"
@@ -86,6 +92,7 @@ def test_regulation_chunk_create_request_rejects_invalid_source_url() -> None:
     with pytest.raises(ValidationError):
         RegulationChunkCreateRequest(
             document_id="dorm-rule-001",
+            document_version="2026.04",
             chunk_id="chunk-1",
             chunk_index=0,
             title="외박 신청",
@@ -108,6 +115,7 @@ def test_regulation_chunk_bulk_create_request_limits_items_to_twenty() -> None:
             items=[
                 RegulationChunkCreateRequest(
                     document_id=f"dorm-rule-{index}",
+                    document_version="2026.04",
                     chunk_id=f"dorm-rule-{index}-01",
                     chunk_index=index,
                     title="외박 신청",
@@ -125,6 +133,7 @@ def test_regulation_chunk_bulk_create_request_accepts_twenty_items() -> None:
         items=[
             RegulationChunkCreateRequest(
                 document_id=f"dorm-rule-{index}",
+                document_version="2026.04",
                 chunk_id=f"dorm-rule-{index}-01",
                 chunk_index=index,
                 title="외박 신청",

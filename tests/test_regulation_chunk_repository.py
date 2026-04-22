@@ -1,5 +1,8 @@
 """regulation_chunk repository가 조회/저장 매핑을 올바르게 처리하는지 검증하는 테스트 파일입니다."""
 
+from types import SimpleNamespace
+
+from app.repositories import regulation_chunk_repository
 from app.repositories.regulation_chunk_repository import create_regulation_chunk
 from app.repositories.regulation_chunk_repository import find_existing_chunk_ids
 from app.schemas.regulation_chunk import RegulationChunkCreateRequest
@@ -45,6 +48,7 @@ def test_create_regulation_chunk_maps_document_id_to_model() -> None:
     db = FakeSession()
     payload = RegulationChunkCreateRequest(
         document_id="dorm-rule-001",
+        document_version="2026.04",
         chunk_id="dorm-rule-001-03",
         chunk_index=3,
         category="외박",
@@ -57,6 +61,13 @@ def test_create_regulation_chunk_maps_document_id_to_model() -> None:
         source_type="official",
     )
 
+    regulation_chunk_repository._get_or_create_regulation_document = lambda *_args, **_kwargs: SimpleNamespace(
+        regulation_document_id=7
+    )
+    regulation_chunk_repository.get_settings = lambda: SimpleNamespace(
+        openai_embedding_model="text-embedding-3-small"
+    )
+
     regulation_chunk = create_regulation_chunk(
         db=db,
         payload=payload,
@@ -65,8 +76,10 @@ def test_create_regulation_chunk_maps_document_id_to_model() -> None:
     )
 
     assert db.added is regulation_chunk
-    assert regulation_chunk.document_id == "dorm-rule-001"
+    assert regulation_chunk.regulation_document_id == 7
+    assert regulation_chunk.document_version == "2026.04"
     assert regulation_chunk.chunk_id == "dorm-rule-001-03"
+    assert regulation_chunk.embedding_model == "text-embedding-3-small"
     assert db.flush_called is True
     assert db.refresh_called is True
 

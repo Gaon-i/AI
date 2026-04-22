@@ -37,7 +37,9 @@ def create_regulation_chunk_with_embedding(
 
     return RegulationChunkCreateResult(
         regulation_chunk_id=regulation_chunk.regulation_chunk_id,
-        document_id=regulation_chunk.document_id,
+        regulation_document_id=regulation_chunk.regulation_document_id,
+        document_id=payload.document_id,
+        document_version=payload.document_version,
         chunk_id=regulation_chunk.chunk_id,
         chunk_index=regulation_chunk.chunk_index,
         source_type=payload.source_type,

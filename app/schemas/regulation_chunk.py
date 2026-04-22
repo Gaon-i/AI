@@ -20,6 +20,7 @@ class RegulationChunkCreateRequest(BaseModel):
     """단건 청크 생성 요청 바디를 검증하는 스키마입니다."""
 
     document_id: str = Field(min_length=1, max_length=100)
+    document_version: str = Field(min_length=1, max_length=50)
     chunk_id: str = Field(min_length=1, max_length=100)
     chunk_index: int = Field(ge=0)
     category: Optional[str] = None
@@ -31,7 +32,7 @@ class RegulationChunkCreateRequest(BaseModel):
     source_url: Optional[HttpUrl] = None
     source_type: RegulationChunkSourceType
 
-    @field_validator("document_id", "chunk_id", "title", "content")
+    @field_validator("document_id", "document_version", "chunk_id", "title", "content")
     @classmethod
     def validate_required_text(cls, value: str) -> str:
         """필수 문자열 필드는 공백만 들어오는 경우를 막고 trim 처리합니다."""
@@ -71,7 +72,9 @@ class RegulationChunkCreateResult(BaseModel):
     """단건 생성 성공 시 클라이언트에 돌려줄 최소 결과값입니다."""
 
     regulation_chunk_id: int
+    regulation_document_id: int
     document_id: str
+    document_version: str
     chunk_id: str
     chunk_index: int
     source_type: RegulationChunkSourceType

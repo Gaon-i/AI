@@ -14,6 +14,7 @@ def build_request_payload() -> dict:
     # 여러 API 테스트에서 공통으로 사용하는 정상 요청 바디입니다.
     return {
         "document_id": "dorm-rule-001",
+        "document_version": "2026.04",
         "chunk_id": "dorm-rule-001-03",
         "chunk_index": 3,
         "category": "외박",
@@ -38,6 +39,7 @@ def build_bulk_request_payload(count: int = 2) -> dict:
         "items": [
             {
                 "document_id": "dorm-rule-001",
+                "document_version": "2026.04",
                 "chunk_id": f"dorm-rule-001-{index:02d}",
                 "chunk_index": index,
                 "category": "외박",
@@ -62,7 +64,9 @@ def test_create_regulation_chunk_api_returns_created_response(
     def fake_create_regulation_chunk_with_embedding(*_args, **_kwargs) -> RegulationChunkCreateResult:
         return RegulationChunkCreateResult(
             regulation_chunk_id=1,
+            regulation_document_id=11,
             document_id="dorm-rule-001",
+            document_version="2026.04",
             chunk_id="dorm-rule-001-03",
             chunk_index=3,
             source_type=RegulationChunkSourceType.OFFICIAL,
@@ -86,7 +90,9 @@ def test_create_regulation_chunk_api_returns_created_response(
         "message": "regulation chunk created",
         "data": {
             "regulation_chunk_id": 1,
+            "regulation_document_id": 11,
             "document_id": "dorm-rule-001",
+            "document_version": "2026.04",
             "chunk_id": "dorm-rule-001-03",
             "chunk_index": 3,
             "source_type": "official",

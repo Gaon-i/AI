@@ -29,6 +29,7 @@ def build_payload() -> RegulationChunkCreateRequest:
     # 여러 테스트에서 공통으로 쓰는 정상 요청 바디를 한 곳에서 만듭니다.
     return RegulationChunkCreateRequest(
         document_id="dorm-rule-001",
+        document_version="2026.04",
         chunk_id="dorm-rule-001-03",
         chunk_index=3,
         category="외박",
@@ -48,6 +49,7 @@ def build_bulk_payload(count: int = 2) -> RegulationChunkBulkCreateRequest:
         items=[
             RegulationChunkCreateRequest(
                 document_id="dorm-rule-001",
+                document_version="2026.04",
                 chunk_id=f"dorm-rule-001-{index:02d}",
                 chunk_index=index,
                 category="외박",
@@ -89,7 +91,7 @@ def test_create_regulation_chunk_with_embedding_returns_result(monkeypatch: pyte
     class SavedChunk:
         # repository가 저장 후 반환했다고 가정하는 최소 모델 형태입니다.
         regulation_chunk_id = 1
-        document_id = payload.document_id
+        regulation_document_id = 11
         chunk_id = payload.chunk_id
         chunk_index = payload.chunk_index
 
@@ -109,7 +111,9 @@ def test_create_regulation_chunk_with_embedding_returns_result(monkeypatch: pyte
     result = regulation_chunk_service.create_regulation_chunk_with_embedding(db, payload)
 
     assert result.regulation_chunk_id == 1
+    assert result.regulation_document_id == 11
     assert result.document_id == payload.document_id
+    assert result.document_version == payload.document_version
     assert result.chunk_id == payload.chunk_id
     assert result.chunk_index == payload.chunk_index
     assert result.source_type == payload.source_type

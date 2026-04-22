@@ -1,5 +1,6 @@
 import app.db.models  # noqa: F401
 from app.db.base import Base
+from app.db.models.chat_enums import ChatAnswerStatus
 from app.db.models.notice import Notice
 from app.db.session import check_db_connection, get_engine, get_session_factory
 
@@ -22,7 +23,32 @@ def test_engine_uses_sqlite_for_test_environment() -> None:
 
 
 def test_document_chunk_model_is_registered_in_metadata() -> None:
+    assert "regulation_document" in Base.metadata.tables
     assert "regulation_chunk" in Base.metadata.tables
+    assert "chat_log" in Base.metadata.tables
+    assert "chat_retrieval_result" in Base.metadata.tables
+    assert "chat_feedback" in Base.metadata.tables
+    assert "chat_admin_review" in Base.metadata.tables
+    assert "user_event_log" in Base.metadata.tables
+
+
+def test_regulation_document_columns_match_expected_schema() -> None:
+    table = Base.metadata.tables["regulation_document"]
+
+    assert set(table.columns.keys()) == {
+        "regulation_document_id",
+        "document_id",
+        "document_version",
+        "category",
+        "dormitory",
+        "title",
+        "content",
+        "source",
+        "source_url",
+        "source_type",
+        "created_at",
+        "updated_at",
+    }
 
 
 def test_regulation_chunk_columns_match_expected_schema() -> None:
@@ -30,19 +56,17 @@ def test_regulation_chunk_columns_match_expected_schema() -> None:
 
     assert set(table.columns.keys()) == {
         "regulation_chunk_id",
-        "document_id",
+        "regulation_document_id",
+        "document_version",
         "chunk_id",
         "chunk_index",
-        "category",
-        "dormitory",
-        "title",
-        "content",
         "chunk_text",
         "keywords",
-        "source",
-        "source_url",
-        "source_type",
         "embedding",
+        "chunk_hash",
+        "embedding_model",
+        "is_active",
+        "created_at",
     }
 
 
@@ -51,11 +75,37 @@ def test_regulation_chunk_indexes_match_expected_schema() -> None:
     index_names = {index.name for index in table.indexes}
 
     assert index_names == {
-        "ix_regulation_chunk_document_id",
-        "ix_regulation_chunk_category",
-        "ix_regulation_chunk_dormitory",
-        "ix_regulation_chunk_source_type",
+        "idx_regulation_chunk_document_id",
+        "idx_regulation_chunk_document_version",
+        "idx_regulation_chunk_chunk_id",
+        "idx_regulation_chunk_is_active",
     }
+
+
+def test_chat_log_columns_match_expected_schema() -> None:
+    table = Base.metadata.tables["chat_log"]
+
+    assert set(table.columns.keys()) == {
+        "chat_log_id",
+        "session_id",
+        "user_id",
+        "question",
+        "rewritten_query",
+        "answer",
+        "answer_status",
+        "model_name",
+        "prompt_version",
+        "retrieval_version",
+        "response_time",
+        "created_at",
+    }
+
+
+def test_chat_log_answer_status_uses_expected_enum_values() -> None:
+    table = Base.metadata.tables["chat_log"]
+    answer_status_type = table.columns["answer_status"].type
+
+    assert tuple(answer_status_type.enums) == tuple(status.value for status in ChatAnswerStatus)
 
 
 def test_notice_models_are_registered_in_metadata() -> None:

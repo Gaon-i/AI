@@ -13,6 +13,12 @@ def get_regulation_documents_by_type(
     document_type: str,
 ) -> RegulationLookupResult:
     normalized_document_type = document_type.strip()
+    if not normalized_document_type:
+        return RegulationLookupResult(
+            document_type="",
+            total_count=0,
+            items=[],
+        )
     documents = list_active_regulation_documents_by_type(db, normalized_document_type)
     return RegulationLookupResult(
         document_type=normalized_document_type,

@@ -46,6 +46,10 @@ def test_regulation_document_columns_match_expected_schema() -> None:
         "source",
         "source_url",
         "source_type",
+        "is_active",
+        "deactivated_at",
+        "is_deleted",
+        "deleted_at",
         "created_at",
         "updated_at",
     }

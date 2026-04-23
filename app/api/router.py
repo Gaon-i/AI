@@ -1,8 +1,10 @@
 from fastapi import APIRouter
 
+from app.api.admin_regulations import router as admin_regulations_router
 from app.api.admin_regulation_chunks import router as admin_regulation_chunks_router
 
 api_router = APIRouter()
+api_router.include_router(admin_regulations_router)
 api_router.include_router(admin_regulation_chunks_router)
 
 # feat#6에서 추가

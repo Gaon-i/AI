@@ -1,9 +1,13 @@
 """regulation_chunk 및 regulation_document 저장 책임을 분리한 repository 파일입니다."""
 
 import hashlib
+from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
+from sqlalchemy import delete
 from sqlalchemy import select
+from sqlalchemy import update
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -57,6 +61,70 @@ def create_regulation_chunk(
     return regulation_chunk
 
 
+def create_regulation_chunks_for_document(
+    db: Session,
+    regulation_document: RegulationDocument,
+    chunk_texts: list[str],
+    embeddings: list[list[float]],
+) -> list[RegulationChunk]:
+    settings = get_settings()
+    created_chunks: list[RegulationChunk] = []
+    ingestion_suffix = datetime.utcnow().strftime("%Y%m%d%H%M%S") + uuid4().hex[:8]
+
+    for index, (chunk_text, embedding) in enumerate(zip(chunk_texts, embeddings), start=1):
+        chunk_id = (
+            f"{regulation_document.document_id}"
+            f":{regulation_document.document_version}"
+            f":{ingestion_suffix}:{index}"
+        )
+        regulation_chunk = RegulationChunk(
+            regulation_document_id=regulation_document.regulation_document_id,
+            document_version=regulation_document.document_version,
+            chunk_id=chunk_id,
+            chunk_index=index - 1,
+            chunk_text=chunk_text,
+            keywords=None,
+            chunk_hash=hashlib.sha256(chunk_text.encode("utf-8")).hexdigest(),
+            embedding_model=settings.openai_embedding_model,
+            embedding=embedding,
+            is_active=True,
+        )
+        db.add(regulation_chunk)
+        created_chunks.append(regulation_chunk)
+
+    db.flush()
+    for regulation_chunk in created_chunks:
+        db.refresh(regulation_chunk)
+    return created_chunks
+
+
+def deactivate_chunks_for_document(db: Session, regulation_document_id: int) -> int:
+    statement = (
+        update(RegulationChunk)
+        .where(
+            RegulationChunk.regulation_document_id == regulation_document_id,
+            RegulationChunk.is_active.is_(True),
+        )
+        .values(is_active=False)
+    )
+    return db.execute(statement).rowcount or 0
+
+
+def deactivate_chunks_for_documents(db: Session, regulation_document_ids: list[int]) -> int:
+    if not regulation_document_ids:
+        return 0
+
+    statement = (
+        update(RegulationChunk)
+        .where(
+            RegulationChunk.regulation_document_id.in_(regulation_document_ids),
+            RegulationChunk.is_active.is_(True),
+        )
+        .values(is_active=False)
+    )
+    return db.execute(statement).rowcount or 0
+
+
 def search_similar_chunks(
     db: Session,
     query_embedding: list[float],
@@ -79,6 +147,8 @@ def search_similar_chunks(
           ON rd.regulation_document_id = rc.regulation_document_id
         WHERE (rd.dormitory = :dormitory OR rd.dormitory IS NULL)
           AND rc.is_active = TRUE
+          AND rd.is_active = TRUE
+          AND rd.is_deleted = FALSE
           AND rc.embedding IS NOT NULL
         ORDER BY rc.embedding <=> CAST(:embedding AS vector)
         LIMIT :top_k

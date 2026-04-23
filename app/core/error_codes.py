@@ -147,6 +147,31 @@ REGULATION_CHUNK_BULK_CREATE_FAILED = ErrorCode(
     message="failed to create regulation chunks",
     status=500,
 )
+REGULATION_DOCUMENT_NOT_FOUND = ErrorCode(
+    code="REGULATION_DOCUMENT_NOT_FOUND",
+    message="regulation document not found",
+    status=404,
+)
+REGULATION_DOCUMENT_ALREADY_EXISTS = ErrorCode(
+    code="REGULATION_DOCUMENT_ALREADY_EXISTS",
+    message="regulation document already exists",
+    status=409,
+)
+REGULATION_DOCUMENT_CREATE_FAILED = ErrorCode(
+    code="REGULATION_DOCUMENT_CREATE_FAILED",
+    message="failed to create regulation document",
+    status=500,
+)
+REGULATION_DOCUMENT_UPDATE_FAILED = ErrorCode(
+    code="REGULATION_DOCUMENT_UPDATE_FAILED",
+    message="failed to update regulation document",
+    status=500,
+)
+REGULATION_DOCUMENT_DELETE_FAILED = ErrorCode(
+    code="REGULATION_DOCUMENT_DELETE_FAILED",
+    message="failed to delete regulation document",
+    status=500,
+)
 NOTICE_SAVE_FAILED = ErrorCode(
     code="NOTICE_SAVE_FAILED",
     message="failed to save notice",

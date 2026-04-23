@@ -76,3 +76,11 @@ def test_get_regulation_document_types_returns_summaries(monkeypatch) -> None:
     assert len(result.items) == 3
     assert result.items[1].document_type == "facility"
     assert result.items[1].document_count == 24
+
+
+def test_get_regulation_documents_by_type_returns_empty_result_for_blank_input() -> None:
+    result = regulation_lookup_service.get_regulation_documents_by_type(object(), "   ")
+
+    assert result.document_type == ""
+    assert result.total_count == 0
+    assert result.items == []

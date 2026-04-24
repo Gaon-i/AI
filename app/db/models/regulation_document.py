@@ -26,6 +26,11 @@ class RegulationDocument(Base):
             "document_version",
             name="uq_regulation_document_doc_ver",
         ),
+        Index(
+            "idx_regulation_document_active_document_type_expr",
+            text("regexp_replace(document_id, '_[0-9]+$', '')"),
+            postgresql_where=text("is_active = true"),
+        ),
         Index("idx_regulation_document_document_id", "document_id"),
         Index("idx_regulation_document_document_version", "document_version"),
         Index("idx_regulation_document_category", "category"),

@@ -4,6 +4,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.error_codes import REGULATION_DOCUMENT_ALREADY_EXISTS
 from app.core.error_codes import REGULATION_DOCUMENT_CREATE_FAILED
 from app.core.error_codes import REGULATION_DOCUMENT_DELETE_FAILED
@@ -257,10 +258,11 @@ def _run_reingestion_event(db: Session, regulation_document) -> tuple[str, Optio
 
 
 def _chunk_document_content(regulation_document) -> list[str]:
+    settings = get_settings()
+    max_chunk_length = settings.regulation_chunk_max_length
     content = (regulation_document.content or "").strip()
-    title = (regulation_document.title or "").strip()
     if not content:
-        return [f"제목: {title}".strip()]
+        return [_build_chunk_text(regulation_document, "")]
 
     normalized_lines = [
         line.strip()
@@ -272,19 +274,46 @@ def _chunk_document_content(regulation_document) -> list[str]:
     chunks: list[str] = []
     buffer = ""
     for paragraph in paragraphs:
-        candidate = f"{buffer}\n{paragraph}".strip() if buffer else paragraph
-        if len(candidate) <= 800:
-            buffer = candidate
-            continue
+        paragraph_parts = _split_text_by_max_length(paragraph, max_chunk_length)
+        for paragraph_part in paragraph_parts:
+            candidate = f"{buffer}\n{paragraph_part}".strip() if buffer else paragraph_part
+            if len(candidate) <= max_chunk_length:
+                buffer = candidate
+                continue
 
-        if buffer:
-            chunks.append(_build_chunk_text(regulation_document, buffer))
-        buffer = paragraph
+            if buffer:
+                chunks.append(_build_chunk_text(regulation_document, buffer))
+            buffer = paragraph_part
+
+            if len(buffer) > max_chunk_length:
+                chunks.append(_build_chunk_text(regulation_document, buffer))
+                buffer = ""
 
     if buffer:
         chunks.append(_build_chunk_text(regulation_document, buffer))
 
     return chunks
+
+
+def _split_text_by_max_length(text: str, max_length: int) -> list[str]:
+    if len(text) <= max_length:
+        return [text]
+
+    parts: list[str] = []
+    remaining_text = text.strip()
+    while remaining_text:
+        if len(remaining_text) <= max_length:
+            parts.append(remaining_text)
+            break
+
+        split_index = remaining_text.rfind(" ", 0, max_length + 1)
+        if split_index <= 0:
+            split_index = max_length
+
+        parts.append(remaining_text[:split_index].strip())
+        remaining_text = remaining_text[split_index:].strip()
+
+    return parts
 
 
 def _build_chunk_text(regulation_document, content: str) -> str:

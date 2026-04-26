@@ -8,12 +8,15 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.error_codes import CHAT_SESSION_EXPIRED
+from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.error_codes import CHAT_SESSION_NOT_FOUND
 from app.core.exceptions import AppException
 from app.core.time_utils import get_current_utc_time
 from app.db.models.chat_enums import ChatAnswerStatus
+from app.db.session import get_session_factory
 from app.repositories.chat_error_log_repository import create_chat_error_log
 from app.repositories.chat_log_repository import create_chat_log
+from app.repositories.chat_log_repository import get_chat_log_by_id
 from app.repositories.chat_log_repository import get_chat_session
 from app.repositories.chat_log_repository import touch_chat_session_activity
 from app.repositories.chat_log_repository import update_chat_log_result
@@ -82,6 +85,7 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
 
     started_at = perf_counter()
     normalized_question = None
+    chat_log_id = chat_log.chat_log_id
 
     try:
         try:
@@ -97,7 +101,7 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
         if not is_valid:
             return _finalize_chat_log(
                 db,
-                chat_log=chat_log,
+                chat_log_id=chat_log_id,
                 session_id=payload.session_id,
                 answer_status=ChatAnswerStatus.NO_ANSWER,
                 answer=INVALID_QUESTION_MESSAGE,
@@ -112,7 +116,7 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
         if payload.dormitory:
             return _answer_single_dormitory_chat(
                 db,
-                chat_log=chat_log,
+                chat_log_id=chat_log_id,
                 session_id=payload.session_id,
                 question=normalized_question,
                 dormitory=payload.dormitory,
@@ -121,7 +125,7 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
 
         return _answer_grouped_chat(
             db,
-            chat_log=chat_log,
+            chat_log_id=chat_log_id,
             session_id=payload.session_id,
             question=normalized_question,
             started_at=started_at,
@@ -129,9 +133,8 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
     except Exception as exc:
         error_metadata = _build_chat_error_metadata(exc)
         db.rollback()
-        _finalize_chat_log(
-            db,
-            chat_log=chat_log,
+        _finalize_chat_log_in_new_session(
+            chat_log_id=chat_log_id,
             session_id=payload.session_id,
             answer_status=ChatAnswerStatus.ERROR,
             answer="",
@@ -149,7 +152,7 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
 def _answer_single_dormitory_chat(
     db: Session,
     *,
-    chat_log,
+    chat_log_id: int,
     session_id: str,
     question: str,
     dormitory: str,
@@ -174,7 +177,7 @@ def _answer_single_dormitory_chat(
     if not chunks:
         return _finalize_chat_log(
             db,
-            chat_log=chat_log,
+            chat_log_id=chat_log_id,
             session_id=session_id,
             answer_status=ChatAnswerStatus.NO_ANSWER,
             answer=NO_ANSWER_MESSAGE,
@@ -190,7 +193,7 @@ def _answer_single_dormitory_chat(
     try:
         create_chat_retrieval_results(
             db,
-            chat_log_id=chat_log.chat_log_id,
+            chat_log_id=chat_log_id,
             retrieval_items=labeled_chunks,
             retrieval_method=RETRIEVAL_METHOD_SINGLE,
         )
@@ -201,6 +204,8 @@ def _answer_single_dormitory_chat(
             occurred_step=STEP_RETRIEVAL,
         )
         raise
+    db.commit()
+    db.close()
     try:
         answer_result = generate_answer(question, labeled_chunks)
     except Exception as exc:
@@ -210,9 +215,8 @@ def _answer_single_dormitory_chat(
             occurred_step=STEP_ANSWER_GENERATION,
         )
         raise
-    return _finalize_chat_log(
-        db,
-        chat_log=chat_log,
+    return _finalize_chat_log_in_new_session(
+        chat_log_id=chat_log_id,
         session_id=session_id,
         answer_status=ChatAnswerStatus.SUCCESS,
         answer=answer_result.answer,
@@ -230,7 +234,7 @@ def _answer_single_dormitory_chat(
 def _answer_grouped_chat(
     db: Session,
     *,
-    chat_log,
+    chat_log_id: int,
     session_id: str,
     question: str,
     started_at: float,
@@ -266,7 +270,7 @@ def _answer_grouped_chat(
     if not any(dormitory_chunks.values()):
         return _finalize_chat_log(
             db,
-            chat_log=chat_log,
+            chat_log_id=chat_log_id,
             session_id=session_id,
             answer_status=ChatAnswerStatus.NO_ANSWER,
             answer=NO_ANSWER_MESSAGE,
@@ -283,7 +287,7 @@ def _answer_grouped_chat(
     try:
         create_chat_retrieval_results(
             db,
-            chat_log_id=chat_log.chat_log_id,
+            chat_log_id=chat_log_id,
             retrieval_items=flattened_chunks,
             retrieval_method=RETRIEVAL_METHOD_GROUPED,
         )
@@ -294,6 +298,8 @@ def _answer_grouped_chat(
             occurred_step=STEP_RETRIEVAL,
         )
         raise
+    db.commit()
+    db.close()
     try:
         answer_result = generate_grouped_answer(question, grouped_labeled_chunks)
     except Exception as exc:
@@ -303,9 +309,8 @@ def _answer_grouped_chat(
             occurred_step=STEP_ANSWER_GENERATION,
         )
         raise
-    return _finalize_chat_log(
-        db,
-        chat_log=chat_log,
+    return _finalize_chat_log_in_new_session(
+        chat_log_id=chat_log_id,
         session_id=session_id,
         answer_status=ChatAnswerStatus.SUCCESS,
         answer=answer_result.answer,
@@ -323,7 +328,7 @@ def _answer_grouped_chat(
 def _finalize_chat_log(
     db: Session,
     *,
-    chat_log,
+    chat_log_id: int,
     session_id: str,
     answer_status: ChatAnswerStatus,
     answer: str,
@@ -337,11 +342,15 @@ def _finalize_chat_log(
     cited_regulation_chunk_ids: Optional[list[int]] = None,
     error_metadata: Optional[ChatErrorMetadata] = None,
 ) -> ChatResponse:
+    chat_log = get_chat_log_by_id(db, chat_log_id)
+    if chat_log is None:
+        raise AppException(CHAT_LOG_NOT_FOUND)
+
     if mark_retrieval_used:
         try:
             mark_chat_retrieval_results_used_in_answer(
                 db,
-                chat_log_id=chat_log.chat_log_id,
+                chat_log_id=chat_log_id,
                 cited_regulation_chunk_ids=cited_regulation_chunk_ids or [],
             )
         except Exception as exc:
@@ -365,7 +374,7 @@ def _finalize_chat_log(
     if error_metadata is not None:
         create_chat_error_log(
             db,
-            chat_log_id=chat_log.chat_log_id,
+            chat_log_id=chat_log_id,
             session_id=session_id,
             error_type=error_metadata.error_type,
             error_message=error_metadata.error_message,
@@ -376,12 +385,51 @@ def _finalize_chat_log(
     db.refresh(chat_log)
 
     return ChatResponse(
-        chat_log_id=chat_log.chat_log_id,
+        chat_log_id=chat_log_id,
         session_id=session_id,
         answer=answer,
         answer_status=answer_status.value,
         source_url=source_url,
     )
+
+
+def _finalize_chat_log_in_new_session(
+    *,
+    chat_log_id: int,
+    session_id: str,
+    answer_status: ChatAnswerStatus,
+    answer: str,
+    source_url: str,
+    rewritten_query: Optional[str],
+    model_name: Optional[str],
+    prompt_version: Optional[str],
+    retrieval_version: Optional[str],
+    response_time_ms: int,
+    mark_retrieval_used: bool = False,
+    cited_regulation_chunk_ids: Optional[list[int]] = None,
+    error_metadata: Optional[ChatErrorMetadata] = None,
+) -> ChatResponse:
+    session_factory = get_session_factory()
+    finalize_db = session_factory()
+    try:
+        return _finalize_chat_log(
+            finalize_db,
+            chat_log_id=chat_log_id,
+            session_id=session_id,
+            answer_status=answer_status,
+            answer=answer,
+            source_url=source_url,
+            rewritten_query=rewritten_query,
+            model_name=model_name,
+            prompt_version=prompt_version,
+            retrieval_version=retrieval_version,
+            response_time_ms=response_time_ms,
+            mark_retrieval_used=mark_retrieval_used,
+            cited_regulation_chunk_ids=cited_regulation_chunk_ids,
+            error_metadata=error_metadata,
+        )
+    finally:
+        finalize_db.close()
 
 
 def _elapsed_ms(started_at: float) -> int:

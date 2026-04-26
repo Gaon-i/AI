@@ -14,6 +14,7 @@ class FakeSession:
         self.commit_count = 0
         self.flush_count = 0
         self.rollback_count = 0
+        self.close_count = 0
         self.refreshed_objects: list[object] = []
 
     def commit(self) -> None:
@@ -27,6 +28,9 @@ class FakeSession:
 
     def refresh(self, value) -> None:
         self.refreshed_objects.append(value)
+
+    def close(self) -> None:
+        self.close_count += 1
 
 
 def _build_chat_session():
@@ -63,6 +67,7 @@ def _build_chat_log():
 
 def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: pytest.MonkeyPatch) -> None:
     db = FakeSession()
+    finalize_db = FakeSession()
     chat_session = _build_chat_session()
     chat_log = _build_chat_log()
 
@@ -70,7 +75,9 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
 
     monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
     monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
     monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "get_session_factory", lambda: (lambda: finalize_db))
     monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (True, "외박 신청은 어디서 하나요?"))
     monkeypatch.setattr(chat_service, "create_query_embedding", lambda *_args, **_kwargs: [0.1, 0.2, 0.3])
     monkeypatch.setattr(
@@ -140,7 +147,10 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     assert retrieval_calls["mark_used_chat_log_id"] == 501
     assert retrieval_calls["cited_regulation_chunk_ids"] == [1001]
     assert db.commit_count == 2
-    assert db.flush_count == 1
+    assert db.close_count == 1
+    assert finalize_db.commit_count == 1
+    assert db.flush_count == 0
+    assert finalize_db.flush_count == 1
     assert db.rollback_count == 0
 
 
@@ -151,6 +161,7 @@ def test_answer_chat_question_returns_no_answer_for_invalid_question(monkeypatch
 
     monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
     monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
     monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: chat_session)
     monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (False, "질문이 너무 짧습니다."))
     monkeypatch.setattr(
@@ -173,6 +184,7 @@ def test_answer_chat_question_returns_no_answer_for_invalid_question(monkeypatch
     assert chat_log.answer_status == ChatAnswerStatus.NO_ANSWER
     assert chat_log.rewritten_query == "질문이 너무 짧습니다."
     assert db.commit_count == 2
+    assert db.close_count == 0
     assert db.flush_count == 1
     assert db.rollback_count == 0
 
@@ -196,6 +208,7 @@ def test_answer_chat_question_raises_not_found_when_session_missing(monkeypatch:
 
 def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     db = FakeSession()
+    finalize_db = FakeSession()
     chat_session = _build_chat_session()
     chat_log = _build_chat_log()
 
@@ -204,7 +217,9 @@ def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pyt
 
     monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
     monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
     monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "get_session_factory", lambda: (lambda: finalize_db))
     monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (True, "외박 신청은 어디서 하나요?"))
     monkeypatch.setattr(chat_service, "create_query_embedding", lambda *_args, **_kwargs: [0.1, 0.2, 0.3])
     monkeypatch.setattr(
@@ -264,7 +279,10 @@ def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pyt
     assert error_log_calls["error_message"] == "llm failed"
     assert error_log_calls["error_detail"] == "RuntimeError: llm failed"
     assert db.commit_count == 2
-    assert db.flush_count == 1
+    assert db.close_count == 1
+    assert finalize_db.commit_count == 1
+    assert db.flush_count == 0
+    assert finalize_db.flush_count == 1
     assert db.rollback_count == 1
 
 

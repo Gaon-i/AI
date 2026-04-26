@@ -14,6 +14,11 @@ def get_chat_session(db: Session, session_id: str) -> Optional[ChatSession]:
     return db.execute(statement).scalar_one_or_none()
 
 
+def get_chat_log_by_id(db: Session, chat_log_id: int) -> Optional[ChatLog]:
+    statement = select(ChatLog).where(ChatLog.chat_log_id == chat_log_id)
+    return db.execute(statement).scalar_one_or_none()
+
+
 def create_chat_log(
     db: Session,
     *,
@@ -61,5 +66,4 @@ def touch_chat_session_activity(db: Session, chat_session: ChatSession) -> ChatS
     chat_session.total_turns += 1
     chat_session.last_activity_at = get_current_utc_time()
     db.flush()
-    db.refresh(chat_session)
     return chat_session

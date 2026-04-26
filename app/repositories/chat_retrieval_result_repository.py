@@ -38,8 +38,6 @@ def create_chat_retrieval_results(
         created_items.append(retrieval_result)
 
     db.flush()
-    for retrieval_result in created_items:
-        db.refresh(retrieval_result)
     return created_items
 
 
@@ -63,6 +61,4 @@ def mark_chat_retrieval_results_used_in_answer(
         retrieval_result.citation_order = citation_order
 
     db.flush()
-    for retrieval_result in retrieval_results:
-        db.refresh(retrieval_result)
     return retrieval_results

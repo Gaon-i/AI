@@ -42,6 +42,7 @@ class AdminChatSessionSummary(BaseModel):
     total_turns: int
     started_at: datetime
     last_activity_at: datetime
+    is_expired: bool
 
 
 class AdminRecentChatSessionsResult(BaseModel):

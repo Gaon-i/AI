@@ -96,9 +96,13 @@ def test_get_recent_admin_chat_sessions_returns_up_to_10(monkeypatch: pytest.Mon
         )(),
     ]
     monkeypatch.setattr(admin_chat_service, "list_recent_chat_sessions", lambda *_args, **_kwargs: sessions)
+    monkeypatch.setattr(admin_chat_service, "get_settings", lambda: type("SettingsStub", (), {"chat_session_timeout_minutes": 30})())
+    monkeypatch.setattr(admin_chat_service, "get_current_utc_time", lambda: datetime(2026, 4, 27, 10, 0, 1))
 
     result = admin_chat_service.get_recent_admin_chat_sessions(object())
 
     assert len(result.items) == 2
     assert result.items[0].session_id == "session-123"
     assert result.items[1].session_id == "session-456"
+    assert result.items[0].is_expired is False
+    assert result.items[1].is_expired is True

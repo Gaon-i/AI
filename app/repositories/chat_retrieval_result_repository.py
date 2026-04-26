@@ -12,11 +12,15 @@ def create_chat_retrieval_results(
     retrieval_method: str,
 ) -> list[ChatRetrievalResult]:
     created_items: list[ChatRetrievalResult] = []
+    seen_regulation_chunk_ids: set[int] = set()
 
     for rank, item in enumerate(retrieval_items, start=1):
         regulation_chunk_id = item.get("regulation_chunk_id")
         if regulation_chunk_id is None:
             continue
+        if regulation_chunk_id in seen_regulation_chunk_ids:
+            continue
+        seen_regulation_chunk_ids.add(regulation_chunk_id)
 
         retrieval_result = ChatRetrievalResult(
             chat_log_id=chat_log_id,

@@ -1,9 +1,9 @@
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.core.time_utils import get_current_utc_time
 from app.db.models.chat_enums import ChatAnswerStatus
 from app.db.models.chat_log import ChatLog
 from app.db.models.chat_session import ChatSession
@@ -59,7 +59,7 @@ def update_chat_log_result(
 
 def touch_chat_session_activity(db: Session, chat_session: ChatSession) -> ChatSession:
     chat_session.total_turns += 1
-    chat_session.last_activity_at = datetime.utcnow()
+    chat_session.last_activity_at = get_current_utc_time()
     db.flush()
     db.refresh(chat_session)
     return chat_session

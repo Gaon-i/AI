@@ -182,3 +182,18 @@ NOTICE_DELETE_FAILED = ErrorCode(
     message="failed to delete expired notices",
     status=500,
 )
+CHAT_SESSION_NOT_FOUND = ErrorCode(
+    code="CHAT_SESSION_NOT_FOUND",
+    message="chat session not found",
+    status=404,
+)
+CHAT_SESSION_EXPIRED = ErrorCode(
+    code="CHAT_SESSION_EXPIRED",
+    message="chat session expired",
+    status=409,
+)
+CHAT_LOG_NOT_FOUND = ErrorCode(
+    code="CHAT_LOG_NOT_FOUND",
+    message="chat log not found",
+    status=404,
+)

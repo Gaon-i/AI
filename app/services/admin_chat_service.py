@@ -1,0 +1,67 @@
+from sqlalchemy.orm import Session
+
+from app.core.error_codes import CHAT_LOG_NOT_FOUND
+from app.core.exceptions import AppException
+from app.repositories.admin_chat_repository import get_chat_log_by_id
+from app.repositories.admin_chat_repository import list_chat_retrieval_results_by_chat_log_id
+from app.repositories.admin_chat_repository import list_recent_chat_sessions
+from app.schemas.admin_chat import AdminChatLogDetail
+from app.schemas.admin_chat import AdminChatRetrievalResult
+from app.schemas.admin_chat import AdminRecentChatSessionsResult
+from app.schemas.admin_chat import AdminChatSessionSummary
+
+
+def get_admin_chat_log_detail(db: Session, chat_log_id: int) -> AdminChatLogDetail:
+    chat_log = get_chat_log_by_id(db, chat_log_id)
+    if chat_log is None:
+        raise AppException(CHAT_LOG_NOT_FOUND)
+    retrieval_results = list_chat_retrieval_results_by_chat_log_id(db, chat_log_id)
+
+    return AdminChatLogDetail(
+        chat_log_id=chat_log.chat_log_id,
+        session_id=chat_log.session_id,
+        user_id=chat_log.user_id,
+        question=chat_log.question,
+        rewritten_query=chat_log.rewritten_query,
+        answer=chat_log.answer,
+        answer_status=chat_log.answer_status.value,
+        model_name=chat_log.model_name,
+        prompt_version=chat_log.prompt_version,
+        retrieval_version=chat_log.retrieval_version,
+        response_time=chat_log.response_time,
+        created_at=chat_log.created_at,
+        retrieval_results=[
+            AdminChatRetrievalResult(
+                chat_retrieval_result_id=item.chat_retrieval_result_id,
+                regulation_chunk_id=item.regulation_chunk_id,
+                document_id=item.document_id,
+                document_version=item.document_version,
+                chunk_id=item.chunk_id,
+                retrieval_rank=item.retrieval_rank,
+                retrieval_score=float(item.retrieval_score) if item.retrieval_score is not None else None,
+                rerank_score=float(item.rerank_score) if item.rerank_score is not None else None,
+                retrieval_method=item.retrieval_method,
+                used_in_answer=item.used_in_answer,
+                selected_as_citation=item.selected_as_citation,
+                citation_order=item.citation_order,
+                created_at=item.created_at,
+            )
+            for item in retrieval_results
+        ],
+    )
+
+
+def get_recent_admin_chat_sessions(db: Session) -> AdminRecentChatSessionsResult:
+    sessions = list_recent_chat_sessions(db, limit=10)
+    return AdminRecentChatSessionsResult(
+        items=[
+            AdminChatSessionSummary(
+                session_id=session.session_id,
+                user_id=session.user_id,
+                total_turns=session.total_turns,
+                started_at=session.started_at,
+                last_activity_at=session.last_activity_at,
+            )
+            for session in sessions
+        ]
+    )

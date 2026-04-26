@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_dimension: int = 1536
     openai_timeout_seconds: float = 10.0
+    chat_session_timeout_minutes: int = 30
 
 
 @lru_cache

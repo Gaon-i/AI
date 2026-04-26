@@ -98,6 +98,9 @@ def search_similar_chunks(
     sql = text(
         """
         SELECT
+            rc.regulation_chunk_id,
+            rd.document_id,
+            rd.document_version,
             rc.chunk_id,
             COALESCE(rc.chunk_text, rd.content, '') AS content,
             rd.source_url,
@@ -125,6 +128,9 @@ def search_similar_chunks(
 
     return [
         {
+            "regulation_chunk_id": row.regulation_chunk_id,
+            "document_id": row.document_id,
+            "document_version": row.document_version,
             "chunk_id": row.chunk_id,
             "content": row.content,
             "source_url": row.source_url,

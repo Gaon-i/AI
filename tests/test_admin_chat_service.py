@@ -51,6 +51,24 @@ def test_get_admin_chat_log_detail_returns_mapped_schema(monkeypatch: pytest.Mon
             )()
         ],
     )
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_error_logs_by_chat_log_id",
+        lambda *_args, **_kwargs: [
+            type(
+                "ChatErrorLogStub",
+                (),
+                {
+                    "error_id": 31,
+                    "error_type": "LLM_API_ERROR",
+                    "error_message": "llm failed",
+                    "error_detail": "RuntimeError: llm failed",
+                    "occurred_step": "ANSWER_GENERATION",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 2),
+                },
+            )()
+        ],
+    )
 
     result = admin_chat_service.get_admin_chat_log_detail(object(), 11)
 
@@ -59,6 +77,8 @@ def test_get_admin_chat_log_detail_returns_mapped_schema(monkeypatch: pytest.Mon
     assert result.answer_status == "SUCCESS"
     assert len(result.retrieval_results) == 1
     assert result.retrieval_results[0].regulation_chunk_id == 1001
+    assert len(result.error_logs) == 1
+    assert result.error_logs[0].error_type == "LLM_API_ERROR"
 
 
 def test_get_admin_chat_log_detail_raises_not_found(monkeypatch: pytest.MonkeyPatch) -> None:

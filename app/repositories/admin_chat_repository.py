@@ -4,6 +4,7 @@ from sqlalchemy import desc
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.models.chat_error_log import ChatErrorLog
 from app.db.models.chat_log import ChatLog
 from app.db.models.chat_retrieval_result import ChatRetrievalResult
 from app.db.models.chat_session import ChatSession
@@ -34,5 +35,17 @@ def list_chat_retrieval_results_by_chat_log_id(
             ChatRetrievalResult.retrieval_rank.asc(),
             ChatRetrievalResult.chat_retrieval_result_id.asc(),
         )
+    )
+    return list(db.execute(statement).scalars().all())
+
+
+def list_chat_error_logs_by_chat_log_id(
+    db: Session,
+    chat_log_id: int,
+) -> list[ChatErrorLog]:
+    statement = (
+        select(ChatErrorLog)
+        .where(ChatErrorLog.chat_log_id == chat_log_id)
+        .order_by(ChatErrorLog.created_at.asc(), ChatErrorLog.error_id.asc())
     )
     return list(db.execute(statement).scalars().all())

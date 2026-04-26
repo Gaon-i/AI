@@ -1,7 +1,12 @@
+from datetime import datetime
+from datetime import timedelta
+
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
+from app.core.time_utils import get_current_utc_time
 from app.repositories.admin_chat_repository import get_chat_log_by_id
 from app.repositories.admin_chat_repository import list_chat_retrieval_results_by_chat_log_id
 from app.repositories.admin_chat_repository import list_recent_chat_sessions
@@ -61,7 +66,14 @@ def get_recent_admin_chat_sessions(db: Session) -> AdminRecentChatSessionsResult
                 total_turns=session.total_turns,
                 started_at=session.started_at,
                 last_activity_at=session.last_activity_at,
+                is_expired=_is_chat_session_expired(session.last_activity_at),
             )
             for session in sessions
         ]
     )
+
+
+def _is_chat_session_expired(last_activity_at: datetime) -> bool:
+    settings = get_settings()
+    expiration_threshold = get_current_utc_time() - timedelta(minutes=settings.chat_session_timeout_minutes)
+    return last_activity_at < expiration_threshold

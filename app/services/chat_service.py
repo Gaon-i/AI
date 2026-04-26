@@ -9,6 +9,7 @@ from app.core.config import get_settings
 from app.core.error_codes import CHAT_SESSION_EXPIRED
 from app.core.error_codes import CHAT_SESSION_NOT_FOUND
 from app.core.exceptions import AppException
+from app.core.time_utils import get_current_utc_time
 from app.db.models.chat_enums import ChatAnswerStatus
 from app.repositories.chat_log_repository import create_chat_log
 from app.repositories.chat_retrieval_result_repository import create_chat_retrieval_results
@@ -274,7 +275,7 @@ def _elapsed_ms(started_at: float) -> int:
 
 def _is_chat_session_expired(last_activity_at: datetime) -> bool:
     settings = get_settings()
-    expiration_threshold = datetime.utcnow() - timedelta(minutes=settings.chat_session_timeout_minutes)
+    expiration_threshold = get_current_utc_time() - timedelta(minutes=settings.chat_session_timeout_minutes)
     return last_activity_at < expiration_threshold
 
 
@@ -287,10 +288,21 @@ def _build_chat_session_expired_message() -> str:
 
 
 def _flatten_grouped_retrieval_items(dormitory_chunks: dict[str, list[dict]]) -> list[dict]:
-    flattened_items: list[dict] = []
+    deduplicated_items: dict[int, dict] = {}
     for dormitory, chunks in dormitory_chunks.items():
         for chunk in chunks:
-            flattened_item = dict(chunk)
-            flattened_item["retrieval_group"] = dormitory
-            flattened_items.append(flattened_item)
-    return flattened_items
+            regulation_chunk_id = chunk.get("regulation_chunk_id")
+            if regulation_chunk_id is None:
+                continue
+
+            existing_item = deduplicated_items.get(regulation_chunk_id)
+            if existing_item is None or chunk.get("similarity", 0.0) > existing_item.get("similarity", 0.0):
+                flattened_item = dict(chunk)
+                flattened_item["retrieval_group"] = dormitory
+                deduplicated_items[regulation_chunk_id] = flattened_item
+
+    return sorted(
+        deduplicated_items.values(),
+        key=lambda item: item.get("similarity", 0.0),
+        reverse=True,
+    )

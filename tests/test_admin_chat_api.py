@@ -132,6 +132,7 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     total_turns=3,
                     started_at="2026-04-27T09:30:00",
                     last_activity_at="2026-04-27T10:00:00",
+                    is_expired=False,
                 ),
                 AdminChatSessionSummary(
                     session_id="session-456",
@@ -139,6 +140,7 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     total_turns=1,
                     started_at="2026-04-27T09:00:00",
                     last_activity_at="2026-04-27T09:10:00",
+                    is_expired=True,
                 ),
             ]
         ),
@@ -161,6 +163,7 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     "total_turns": 3,
                     "started_at": "2026-04-27T09:30:00",
                     "last_activity_at": "2026-04-27T10:00:00",
+                    "is_expired": False,
                 },
                 {
                     "session_id": "session-456",
@@ -168,6 +171,7 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     "total_turns": 1,
                     "started_at": "2026-04-27T09:00:00",
                     "last_activity_at": "2026-04-27T09:10:00",
+                    "is_expired": True,
                 },
             ]
         },

@@ -252,13 +252,7 @@ def test_answer_chat_question_raises_expired_when_session_is_inactive(monkeypatc
     monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: pytest.fail("chat_log should not be created"))
     monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: pytest.fail("expired session should not be updated"))
     monkeypatch.setattr(chat_service, "get_settings", lambda: type("SettingsStub", (), {"chat_session_timeout_minutes": 30})())
-
-    class FrozenDateTime:
-        @staticmethod
-        def utcnow() -> datetime:
-            return datetime(2026, 4, 27, 10, 0, 1)
-
-    monkeypatch.setattr(chat_service, "datetime", FrozenDateTime)
+    monkeypatch.setattr(chat_service, "get_current_utc_time", lambda: datetime(2026, 4, 27, 10, 0, 1))
 
     with pytest.raises(AppException) as exc_info:
         chat_service.answer_chat_question(
@@ -273,3 +267,46 @@ def test_answer_chat_question_raises_expired_when_session_is_inactive(monkeypatc
     assert "30 minutes" in exc_info.value.detail
     assert db.commit_count == 0
     assert db.flush_count == 0
+
+
+def test_flatten_grouped_retrieval_items_deduplicates_same_chunk() -> None:
+    dormitory_chunks = {
+        "제1학생생활관": [
+            {
+                "regulation_chunk_id": 16,
+                "document_id": "admission_008",
+                "document_version": "v1",
+                "chunk_id": "chunk-a",
+                "similarity": 0.429,
+            },
+            {
+                "regulation_chunk_id": 13,
+                "document_id": "admission_005",
+                "document_version": "v1",
+                "chunk_id": "chunk-b",
+                "similarity": 0.416,
+            },
+        ],
+        "제2학생생활관": [
+            {
+                "regulation_chunk_id": 16,
+                "document_id": "admission_008",
+                "document_version": "v1",
+                "chunk_id": "chunk-a",
+                "similarity": 0.429,
+            },
+            {
+                "regulation_chunk_id": 13,
+                "document_id": "admission_005",
+                "document_version": "v1",
+                "chunk_id": "chunk-b",
+                "similarity": 0.416,
+            },
+        ],
+    }
+
+    result = chat_service._flatten_grouped_retrieval_items(dormitory_chunks)
+
+    assert len(result) == 2
+    assert result[0]["regulation_chunk_id"] == 16
+    assert result[1]["regulation_chunk_id"] == 13

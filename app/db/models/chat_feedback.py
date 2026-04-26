@@ -52,7 +52,11 @@ class ChatFeedback(Base):
         ForeignKey("chat_log.chat_log_id"),
         nullable=False,
     )
-    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("user.user_id"),
+        nullable=True,
+    )
     feedback_type: Mapped[str] = mapped_column(String(50), nullable=False)
     is_helpful: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
     rating: Mapped[Optional[int]] = mapped_column(SmallInteger, nullable=True)

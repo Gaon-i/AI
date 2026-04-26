@@ -51,7 +51,11 @@ class ChatAdminReview(Base):
         ForeignKey("chat_log.chat_log_id"),
         nullable=False,
     )
-    reviewer_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    reviewer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("admin.admin_id"),
+        nullable=False,
+    )
     correctness_label: Mapped[str] = mapped_column(String(50), nullable=False)
     citation_label: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     root_cause: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)

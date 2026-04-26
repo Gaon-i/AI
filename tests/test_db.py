@@ -23,13 +23,25 @@ def test_engine_uses_sqlite_for_test_environment() -> None:
 
 
 def test_document_chunk_model_is_registered_in_metadata() -> None:
+    assert "admin" in Base.metadata.tables
+    assert "user" in Base.metadata.tables
+    assert "dormitory" in Base.metadata.tables
+    assert "room" in Base.metadata.tables
+    assert "email_verification" in Base.metadata.tables
+    assert "faq" in Base.metadata.tables
     assert "regulation_document" in Base.metadata.tables
     assert "regulation_chunk" in Base.metadata.tables
+    assert "complaint" in Base.metadata.tables
+    assert "complaint_image" in Base.metadata.tables
+    assert "complaint_history" in Base.metadata.tables
+    assert "chat_session" in Base.metadata.tables
     assert "chat_log" in Base.metadata.tables
+    assert "system_log" in Base.metadata.tables
     assert "chat_retrieval_result" in Base.metadata.tables
     assert "chat_feedback" in Base.metadata.tables
     assert "chat_admin_review" in Base.metadata.tables
     assert "user_event_log" in Base.metadata.tables
+    assert "chat_error_log" in Base.metadata.tables
 
 
 def test_regulation_document_columns_match_expected_schema() -> None:
@@ -45,11 +57,9 @@ def test_regulation_document_columns_match_expected_schema() -> None:
         "content",
         "source",
         "source_url",
+        "keywords",
         "source_type",
         "is_active",
-        "deactivated_at",
-        "is_deleted",
-        "deleted_at",
         "created_at",
         "updated_at",
     }
@@ -110,6 +120,29 @@ def test_chat_log_answer_status_uses_expected_enum_values() -> None:
     answer_status_type = table.columns["answer_status"].type
 
     assert tuple(answer_status_type.enums) == tuple(status.value for status in ChatAnswerStatus)
+
+
+def test_chat_session_columns_match_expected_schema() -> None:
+    table = Base.metadata.tables["chat_session"]
+
+    assert set(table.columns.keys()) == {
+        "session_id",
+        "user_id",
+        "total_turns",
+        "started_at",
+        "last_activity_at",
+    }
+
+
+def test_chat_session_indexes_match_expected_schema() -> None:
+    table = Base.metadata.tables["chat_session"]
+    index_names = {index.name for index in table.indexes}
+
+    assert index_names == {
+        "idx_chat_session_user_id",
+        "idx_chat_session_started_at",
+        "idx_chat_session_last_activity_at",
+    }
 
 
 def test_notice_models_are_registered_in_metadata() -> None:

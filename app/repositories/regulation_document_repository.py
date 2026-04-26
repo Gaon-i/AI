@@ -1,6 +1,5 @@
 """regulation_document CRUD 및 관리자용 조회 책임을 분리한 repository 파일입니다."""
 
-from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select
@@ -40,7 +39,6 @@ def find_active_regulation_documents_by_document_id(
 ) -> list[RegulationDocument]:
     statement = select(RegulationDocument).where(
         RegulationDocument.document_id == document_id,
-        RegulationDocument.is_deleted.is_(False),
         RegulationDocument.is_active.is_(True),
     )
     return list(db.execute(statement).scalars().all())
@@ -59,11 +57,9 @@ def create_regulation_document(
         content=payload.content,
         source=payload.source,
         source_url=str(payload.source_url) if payload.source_url else None,
+        keywords=payload.keywords,
         source_type=payload.source_type.value,
         is_active=False,
-        deactivated_at=None,
-        is_deleted=False,
-        deleted_at=None,
     )
     db.add(regulation_document)
     db.flush()
@@ -87,25 +83,22 @@ def update_regulation_document(
         regulation_document.source = payload.source
     if payload.source_url is not None:
         regulation_document.source_url = str(payload.source_url)
+    if payload.keywords is not None:
+        regulation_document.keywords = payload.keywords
     if payload.source_type is not None:
         regulation_document.source_type = payload.source_type.value
     return regulation_document
 
 
-def mark_regulation_document_deleted(
+def deactivate_regulation_document(
     regulation_document: RegulationDocument,
-    deleted_at: datetime,
 ) -> RegulationDocument:
     regulation_document.is_active = False
-    regulation_document.deactivated_at = deleted_at
-    regulation_document.is_deleted = True
-    regulation_document.deleted_at = deleted_at
     return regulation_document
 
 
 def activate_regulation_document(regulation_document: RegulationDocument) -> RegulationDocument:
     regulation_document.is_active = True
-    regulation_document.deactivated_at = None
     return regulation_document
 
 
@@ -113,17 +106,15 @@ def deactivate_other_document_versions(
     db: Session,
     document_id: str,
     active_document_id: int,
-    deactivated_at: datetime,
 ) -> list[int]:
     statement = (
         update(RegulationDocument)
         .where(
             RegulationDocument.document_id == document_id,
             RegulationDocument.regulation_document_id != active_document_id,
-            RegulationDocument.is_deleted.is_(False),
             RegulationDocument.is_active.is_(True),
         )
-        .values(is_active=False, deactivated_at=deactivated_at)
+        .values(is_active=False)
         .returning(RegulationDocument.regulation_document_id)
     )
     return list(db.execute(statement).scalars().all())

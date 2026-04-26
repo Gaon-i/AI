@@ -1,26 +1,31 @@
 """regulation_document CRUD와 자동 청킹/임베딩을 조합하는 서비스 파일입니다."""
 
+from typing import Optional
+
 from sqlalchemy.orm import Session
 
 from app.core.error_codes import REGULATION_DOCUMENT_ALREADY_EXISTS
 from app.core.error_codes import REGULATION_DOCUMENT_CREATE_FAILED
 from app.core.error_codes import REGULATION_DOCUMENT_DELETE_FAILED
+from app.core.error_codes import REGULATION_DOCUMENT_INGEST_FAILED
 from app.core.error_codes import REGULATION_DOCUMENT_NOT_FOUND
 from app.core.error_codes import REGULATION_DOCUMENT_UPDATE_FAILED
 from app.core.exceptions import AppException
-from app.core.time_utils import get_current_kst_time
 from app.repositories.regulation_document_repository import activate_regulation_document
 from app.repositories.regulation_document_repository import create_regulation_document
+from app.repositories.regulation_document_repository import deactivate_regulation_document
 from app.repositories.regulation_document_repository import deactivate_other_document_versions
 from app.repositories.regulation_document_repository import find_active_regulation_documents_by_document_id
 from app.repositories.regulation_document_repository import find_regulation_document_by_document_key
 from app.repositories.regulation_document_repository import find_regulation_document_by_id
-from app.repositories.regulation_document_repository import mark_regulation_document_deleted
 from app.repositories.regulation_document_repository import update_regulation_document
 from app.repositories.regulation_chunk_repository import create_regulation_chunks_for_document
 from app.repositories.regulation_chunk_repository import deactivate_chunks_for_document
 from app.repositories.regulation_chunk_repository import deactivate_chunks_for_documents
 from app.schemas.regulation_document import RegulationDocumentCommandResult
+from app.schemas.regulation_document import RegulationDocumentBulkCreateItemResult
+from app.schemas.regulation_document import RegulationDocumentBulkCreateRequest
+from app.schemas.regulation_document import RegulationDocumentBulkCreateResult
 from app.schemas.regulation_document import RegulationDocumentCreateRequest
 from app.schemas.regulation_document import RegulationDocumentSummary
 from app.schemas.regulation_document import RegulationDocumentUpdateRequest
@@ -49,7 +54,7 @@ def create_regulation_document_with_ingestion(
         raise AppException(REGULATION_DOCUMENT_CREATE_FAILED) from exc
 
     previous_active_documents = find_active_regulation_documents_by_document_id(db, payload.document_id)
-    ingestion_status, ingested_chunk_count, deactivated_chunk_count = _run_ingestion_event(
+    ingestion_status, ingestion_error_code, ingested_chunk_count, deactivated_chunk_count = _run_ingestion_event(
         db,
         regulation_document,
         previous_active_documents=previous_active_documents,
@@ -58,8 +63,47 @@ def create_regulation_document_with_ingestion(
         document=_to_document_summary(regulation_document),
         triggered_action="document_created",
         ingestion_status=ingestion_status,
+        ingestion_error_code=ingestion_error_code,
         ingested_chunk_count=ingested_chunk_count,
         deactivated_chunk_count=deactivated_chunk_count,
+    )
+
+
+def create_regulation_documents_with_ingestion(
+    db: Session,
+    payload: RegulationDocumentBulkCreateRequest,
+) -> RegulationDocumentBulkCreateResult:
+    items: list[RegulationDocumentBulkCreateItemResult] = []
+
+    for item in payload.items:
+        try:
+            result = create_regulation_document_with_ingestion(db, item)
+            items.append(
+                RegulationDocumentBulkCreateItemResult(
+                    status="created",
+                    document_id=item.document_id,
+                    document_version=item.document_version,
+                    result=result,
+                )
+            )
+        except AppException as exc:
+            items.append(
+                RegulationDocumentBulkCreateItemResult(
+                    status="failed",
+                    document_id=item.document_id,
+                    document_version=item.document_version,
+                    error_code=exc.error_code.code,
+                    message=exc.error_code.message,
+                )
+            )
+
+    created_count = sum(1 for item in items if item.status == "created")
+    failed_count = len(items) - created_count
+    return RegulationDocumentBulkCreateResult(
+        total_count=len(items),
+        created_count=created_count,
+        failed_count=failed_count,
+        items=items,
     )
 
 
@@ -70,9 +114,6 @@ def update_regulation_document_with_ingestion(
 ) -> RegulationDocumentCommandResult:
     try:
         regulation_document = _get_regulation_document_or_raise(db, regulation_document_id)
-        if regulation_document.is_deleted:
-            raise AppException(REGULATION_DOCUMENT_NOT_FOUND)
-
         should_reingest = _should_reingest(regulation_document, payload)
         updated_document = update_regulation_document(regulation_document, payload)
         db.commit()
@@ -85,10 +126,11 @@ def update_regulation_document_with_ingestion(
         raise AppException(REGULATION_DOCUMENT_UPDATE_FAILED) from exc
 
     ingestion_status = None
+    ingestion_error_code = None
     ingested_chunk_count = None
     deactivated_chunk_count = None
     if should_reingest:
-        ingestion_status, ingested_chunk_count, deactivated_chunk_count = _run_reingestion_event(
+        ingestion_status, ingestion_error_code, ingested_chunk_count, deactivated_chunk_count = _run_reingestion_event(
             db,
             updated_document,
         )
@@ -97,6 +139,7 @@ def update_regulation_document_with_ingestion(
         document=_to_document_summary(updated_document),
         triggered_action="document_updated",
         ingestion_status=ingestion_status,
+        ingestion_error_code=ingestion_error_code,
         ingested_chunk_count=ingested_chunk_count,
         deactivated_chunk_count=deactivated_chunk_count,
     )
@@ -108,17 +151,11 @@ def delete_regulation_document(
 ) -> RegulationDocumentCommandResult:
     try:
         regulation_document = _get_regulation_document_or_raise(db, regulation_document_id)
-        if regulation_document.is_deleted:
-            raise AppException(REGULATION_DOCUMENT_NOT_FOUND)
-
         deactivated_chunk_count = deactivate_chunks_for_document(
             db,
             regulation_document.regulation_document_id,
         )
-        deleted_document = mark_regulation_document_deleted(
-            regulation_document,
-            deleted_at=get_current_kst_time(),
-        )
+        deleted_document = deactivate_regulation_document(regulation_document)
         db.commit()
         db.refresh(deleted_document)
     except AppException:
@@ -135,7 +172,38 @@ def delete_regulation_document(
     )
 
 
-def _run_ingestion_event(db: Session, regulation_document, previous_active_documents) -> tuple[str, int, int]:
+def rechunk_regulation_document(
+    db: Session,
+    regulation_document_id: int,
+) -> RegulationDocumentCommandResult:
+    try:
+        regulation_document = _get_regulation_document_or_raise(db, regulation_document_id)
+    except AppException:
+        db.rollback()
+        raise
+    except Exception as exc:
+        db.rollback()
+        raise AppException(REGULATION_DOCUMENT_UPDATE_FAILED) from exc
+
+    ingestion_status, ingestion_error_code, ingested_chunk_count, deactivated_chunk_count = (
+        _run_reingestion_event(db, regulation_document)
+    )
+
+    return RegulationDocumentCommandResult(
+        document=_to_document_summary(regulation_document),
+        triggered_action="document_rechunked",
+        ingestion_status=ingestion_status,
+        ingestion_error_code=ingestion_error_code,
+        ingested_chunk_count=ingested_chunk_count,
+        deactivated_chunk_count=deactivated_chunk_count,
+    )
+
+
+def _run_ingestion_event(
+    db: Session,
+    regulation_document,
+    previous_active_documents,
+) -> tuple[str, Optional[str], int, int]:
     try:
         chunk_texts = _chunk_document_content(regulation_document)
         embeddings = create_embeddings_batch(chunk_texts)
@@ -150,18 +218,20 @@ def _run_ingestion_event(db: Session, regulation_document, previous_active_docum
             db,
             document_id=regulation_document.document_id,
             active_document_id=regulation_document.regulation_document_id,
-            deactivated_at=get_current_kst_time(),
         )
         deactivated_chunk_count = deactivate_chunks_for_documents(db, previous_document_ids)
         db.commit()
         db.refresh(regulation_document)
-        return "succeeded", len(created_chunks), deactivated_chunk_count
+        return "succeeded", None, len(created_chunks), deactivated_chunk_count
+    except AppException as exc:
+        db.rollback()
+        return "failed", exc.error_code.code, 0, 0
     except Exception:
         db.rollback()
-        return "failed", 0, 0
+        return "failed", REGULATION_DOCUMENT_INGEST_FAILED.code, 0, 0
 
 
-def _run_reingestion_event(db: Session, regulation_document) -> tuple[str, int, int]:
+def _run_reingestion_event(db: Session, regulation_document) -> tuple[str, Optional[str], int, int]:
     try:
         deactivated_chunk_count = deactivate_chunks_for_document(
             db,
@@ -177,10 +247,13 @@ def _run_reingestion_event(db: Session, regulation_document) -> tuple[str, int, 
         )
         db.commit()
         db.refresh(regulation_document)
-        return "succeeded", len(created_chunks), deactivated_chunk_count
+        return "succeeded", None, len(created_chunks), deactivated_chunk_count
+    except AppException as exc:
+        db.rollback()
+        return "failed", exc.error_code.code, 0, 0
     except Exception:
         db.rollback()
-        return "failed", 0, 0
+        return "failed", REGULATION_DOCUMENT_INGEST_FAILED.code, 0, 0
 
 
 def _chunk_document_content(regulation_document) -> list[str]:
@@ -222,6 +295,8 @@ def _build_chunk_text(regulation_document, content: str) -> str:
         parts.append(f"카테고리: {regulation_document.category}")
     if regulation_document.title:
         parts.append(f"제목: {regulation_document.title}")
+    if regulation_document.keywords:
+        parts.append(f"키워드: {', '.join(regulation_document.keywords)}")
     parts.append(f"본문: {content.strip()}")
     if regulation_document.source:
         parts.append(f"출처: {regulation_document.source}")
@@ -240,7 +315,16 @@ def _get_regulation_document_or_raise(db: Session, regulation_document_id: int):
 
 
 def _should_reingest(regulation_document, payload: RegulationDocumentUpdateRequest) -> bool:
-    content_fields = ("title", "content", "category", "dormitory", "source", "source_url", "source_type")
+    content_fields = (
+        "title",
+        "content",
+        "category",
+        "dormitory",
+        "source",
+        "source_url",
+        "keywords",
+        "source_type",
+    )
     for field_name in content_fields:
         new_value = getattr(payload, field_name)
         if new_value is None:
@@ -265,10 +349,9 @@ def _to_document_summary(regulation_document) -> RegulationDocumentSummary:
         content=regulation_document.content,
         source=regulation_document.source,
         source_url=regulation_document.source_url,
+        keywords=regulation_document.keywords,
         source_type=regulation_document.source_type,
         is_active=regulation_document.is_active,
-        deactivated_at=regulation_document.deactivated_at,
-        is_deleted=regulation_document.is_deleted,
         created_at=regulation_document.created_at,
         updated_at=regulation_document.updated_at,
     )

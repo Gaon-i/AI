@@ -35,8 +35,16 @@ class UserEventLog(Base):
     )
 
     event_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
-    session_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("user.user_id"),
+        nullable=True,
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("chat_session.session_id"),
+        nullable=False,
+    )
     chat_log_id: Mapped[Optional[int]] = mapped_column(
         BigInteger,
         ForeignKey("chat_log.chat_log_id"),

@@ -4,6 +4,7 @@ from typing import Optional
 from sqlalchemy import BigInteger
 from sqlalchemy import DateTime
 from sqlalchemy import Enum
+from sqlalchemy import ForeignKey
 from sqlalchemy import Index
 from sqlalchemy import Integer
 from sqlalchemy import String
@@ -27,8 +28,16 @@ class ChatLog(Base):
     )
 
     chat_log_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    session_id: Mapped[str] = mapped_column(String(100), nullable=False)
-    user_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    session_id: Mapped[str] = mapped_column(
+        String(100),
+        ForeignKey("chat_session.session_id"),
+        nullable=False,
+    )
+    user_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("user.user_id"),
+        nullable=True,
+    )
     question: Mapped[str] = mapped_column(Text, nullable=False)
     rewritten_query: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     answer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -104,6 +104,65 @@ def test_create_regulation_document_with_ingestion_returns_success(monkeypatch: 
     assert result.triggered_action == "document_created"
 
 
+def test_chunk_document_content_returns_standard_chunk_when_content_is_blank(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        regulation_document_service,
+        "get_settings",
+        lambda: type("SettingsStub", (), {"regulation_chunk_max_length": 800})(),
+    )
+    regulation_document = type(
+        "RegulationDocumentStub",
+        (),
+        {
+            "content": "",
+            "title": "외박 신청",
+            "dormitory": "제1학생생활관",
+            "category": "입퇴사 안내",
+            "keywords": ["외박"],
+            "source": "생활관 안내",
+            "source_url": "https://example.com/rules",
+            "source_type": "official",
+        },
+    )()
+
+    chunks = regulation_document_service._chunk_document_content(regulation_document)
+
+    assert len(chunks) == 1
+    assert "제목: 외박 신청" in chunks[0]
+    assert "본문:" in chunks[0]
+
+
+def test_chunk_document_content_splits_long_paragraphs_by_max_length(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        regulation_document_service,
+        "get_settings",
+        lambda: type("SettingsStub", (), {"regulation_chunk_max_length": 20})(),
+    )
+    regulation_document = type(
+        "RegulationDocumentStub",
+        (),
+        {
+            "content": "가나다라마바사아자차카타파하 가나다라마바사아자차카타파하",
+            "title": "긴 문단 테스트",
+            "dormitory": None,
+            "category": None,
+            "keywords": None,
+            "source": None,
+            "source_url": None,
+            "source_type": None,
+        },
+    )()
+
+    chunks = regulation_document_service._chunk_document_content(regulation_document)
+
+    assert len(chunks) >= 2
+    assert all("본문:" in chunk for chunk in chunks)
+
+
 def test_create_regulation_documents_with_ingestion_returns_partial_success(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

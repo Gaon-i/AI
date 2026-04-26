@@ -51,3 +51,17 @@ def test_create_regulation_chunks_for_document_maps_document_fields_to_model() -
     assert regulation_chunk.embedding_model == "text-embedding-3-small"
     assert db.flush_called is True
     assert db.refresh_called_values == [regulation_chunk]
+
+
+def test_count_chunks_for_document_uses_count_query() -> None:
+    executed_statements: list[object] = []
+
+    class CountSession:
+        def execute(self, statement):
+            executed_statements.append(statement)
+            return SimpleNamespace(scalar=lambda: 3)
+
+    result = regulation_chunk_repository.count_chunks_for_document(CountSession(), 7)
+
+    assert result == 3
+    assert len(executed_statements) == 1

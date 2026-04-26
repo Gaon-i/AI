@@ -2,8 +2,10 @@
 
 import hashlib
 from datetime import datetime
+from datetime import timezone
 from uuid import uuid4
 
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy import update
 from sqlalchemy import text
@@ -22,7 +24,7 @@ def create_regulation_chunks_for_document(
 ) -> list[RegulationChunk]:
     settings = get_settings()
     created_chunks: list[RegulationChunk] = []
-    ingestion_suffix = datetime.utcnow().strftime("%Y%m%d%H%M%S") + uuid4().hex[:8]
+    ingestion_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + uuid4().hex[:8]
 
     for index, (chunk_text, embedding) in enumerate(zip(chunk_texts, embeddings), start=1):
         chunk_id = (
@@ -64,10 +66,10 @@ def deactivate_chunks_for_document(db: Session, regulation_document_id: int) -> 
 
 
 def count_chunks_for_document(db: Session, regulation_document_id: int) -> int:
-    statement = select(RegulationChunk.regulation_chunk_id).where(
+    statement = select(func.count()).select_from(RegulationChunk).where(
         RegulationChunk.regulation_document_id == regulation_document_id
     )
-    return len(list(db.execute(statement).scalars().all()))
+    return db.execute(statement).scalar() or 0
 
 
 def deactivate_chunks_for_documents(db: Session, regulation_document_ids: list[int]) -> int:

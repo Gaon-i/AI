@@ -17,7 +17,8 @@ Gaon-i AI 서버의 초기 개발 환경과 개발 원칙을 정리한 문서입
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install ".[dev]"
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
 cp .env.example .env.dev
 uvicorn app.main:app --reload
 ```

@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import BigInteger
 from sqlalchemy import DateTime
+from sqlalchemy import FetchedValue
 from sqlalchemy import Index
 from sqlalchemy import String
 from sqlalchemy import Text
@@ -37,5 +38,5 @@ class Notice(Base):
         DateTime(timezone=False),
         nullable=False,
         server_default=func.now(),
-        onupdate=func.now(),
+        server_onupdate=FetchedValue(),
     )

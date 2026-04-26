@@ -1,63 +1,88 @@
-"""regulation_chunk 테이블에 대한 조회/저장 책임을 분리한 repository 파일입니다."""
+"""regulation_chunk 저장 및 검색 책임을 분리한 repository 파일입니다."""
 
-from typing import Optional
+import hashlib
+from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import select
+from sqlalchemy import update
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-
+from app.core.config import get_settings
+from app.db.models.regulation_document import RegulationDocument
 from app.db.models.regulation_chunk import RegulationChunk
-from app.schemas.regulation_chunk import RegulationChunkCreateRequest
 
 
-def find_by_chunk_id(db: Session, chunk_id: str) -> Optional[RegulationChunk]:
-    """고유한 chunk_id로 기존 청크가 있는지 조회합니다."""
-
-    statement = select(RegulationChunk).where(RegulationChunk.chunk_id == chunk_id)
-    return db.execute(statement).scalar_one_or_none()
-
-
-def find_existing_chunk_ids(db: Session, chunk_ids: list[str]) -> set[str]:
-    """여러 chunk_id 중 이미 DB에 존재하는 값을 한 번의 조회로 가져옵니다."""
-
-    if not chunk_ids:
-        return set()
-
-    statement = select(RegulationChunk.chunk_id).where(RegulationChunk.chunk_id.in_(chunk_ids))
-    return set(db.execute(statement).scalars().all())
-
-
-def create_regulation_chunk(
+def create_regulation_chunks_for_document(
     db: Session,
-    payload: RegulationChunkCreateRequest,
-    chunk_text: str,
-    embedding: list[float],
-) -> RegulationChunk:
-    """서비스에서 준비한 chunk_text와 embedding을 실제 DB row로 저장합니다."""
+    regulation_document: RegulationDocument,
+    chunk_texts: list[str],
+    embeddings: list[list[float]],
+) -> list[RegulationChunk]:
+    settings = get_settings()
+    created_chunks: list[RegulationChunk] = []
+    ingestion_suffix = datetime.utcnow().strftime("%Y%m%d%H%M%S") + uuid4().hex[:8]
 
-    regulation_chunk = RegulationChunk(
-        document_id=payload.document_id,
-        chunk_id=payload.chunk_id,
-        chunk_index=payload.chunk_index,
-        category=payload.category,
-        dormitory=payload.dormitory,
-        title=payload.title,
-        content=payload.content,
-        chunk_text=chunk_text,
-        keywords=payload.keywords,
-        source=payload.source,
-        source_url=str(payload.source_url) if payload.source_url else None,
-        source_type=payload.source_type.value,
-        embedding=embedding,
-    )
-    db.add(regulation_chunk)
+    for index, (chunk_text, embedding) in enumerate(zip(chunk_texts, embeddings), start=1):
+        chunk_id = (
+            f"{regulation_document.document_id}"
+            f":{regulation_document.document_version}"
+            f":{ingestion_suffix}:{index}"
+        )
+        regulation_chunk = RegulationChunk(
+            regulation_document_id=regulation_document.regulation_document_id,
+            document_version=regulation_document.document_version,
+            chunk_id=chunk_id,
+            chunk_index=index - 1,
+            chunk_text=chunk_text,
+            keywords=regulation_document.keywords,
+            chunk_hash=hashlib.sha256(chunk_text.encode("utf-8")).hexdigest(),
+            embedding_model=settings.openai_embedding_model,
+            embedding=embedding,
+            is_active=True,
+        )
+        db.add(regulation_chunk)
+        created_chunks.append(regulation_chunk)
+
     db.flush()
-    db.refresh(regulation_chunk)
-    return regulation_chunk
+    for regulation_chunk in created_chunks:
+        db.refresh(regulation_chunk)
+    return created_chunks
 
 
-# feat#6에서 추가(조회용 함수 추가)
-from sqlalchemy import text
+def deactivate_chunks_for_document(db: Session, regulation_document_id: int) -> int:
+    statement = (
+        update(RegulationChunk)
+        .where(
+            RegulationChunk.regulation_document_id == regulation_document_id,
+            RegulationChunk.is_active.is_(True),
+        )
+        .values(is_active=False)
+    )
+    return db.execute(statement).rowcount or 0
+
+
+def count_chunks_for_document(db: Session, regulation_document_id: int) -> int:
+    statement = select(RegulationChunk.regulation_chunk_id).where(
+        RegulationChunk.regulation_document_id == regulation_document_id
+    )
+    return len(list(db.execute(statement).scalars().all()))
+
+
+def deactivate_chunks_for_documents(db: Session, regulation_document_ids: list[int]) -> int:
+    if not regulation_document_ids:
+        return 0
+
+    statement = (
+        update(RegulationChunk)
+        .where(
+            RegulationChunk.regulation_document_id.in_(regulation_document_ids),
+            RegulationChunk.is_active.is_(True),
+        )
+        .values(is_active=False)
+    )
+    return db.execute(statement).rowcount or 0
 
 
 def search_similar_chunks(
@@ -73,13 +98,18 @@ def search_similar_chunks(
     sql = text(
         """
         SELECT
-            chunk_id,
-            content,
-            source_url,
-            1 - (embedding <=> CAST(:embedding AS vector)) AS similarity
-        FROM regulation_chunk
-        WHERE dormitory = :dormitory OR dormitory IS NULL
-        ORDER BY embedding <=> CAST(:embedding AS vector)
+            rc.chunk_id,
+            COALESCE(rc.chunk_text, rd.content, '') AS content,
+            rd.source_url,
+            1 - (rc.embedding <=> CAST(:embedding AS vector)) AS similarity
+        FROM regulation_chunk rc
+        JOIN regulation_document rd
+          ON rd.regulation_document_id = rc.regulation_document_id
+        WHERE (rd.dormitory = :dormitory OR rd.dormitory IS NULL)
+          AND rc.is_active = TRUE
+          AND rd.is_active = TRUE
+          AND rc.embedding IS NOT NULL
+        ORDER BY rc.embedding <=> CAST(:embedding AS vector)
         LIMIT :top_k
         """
     )

@@ -46,6 +46,16 @@ def test_get_admin_chat_log_api_returns_chat_log_detail(
                     "created_at": datetime(2026, 4, 27, 10, 0, 1),
                 }
             ],
+            error_logs=[
+                {
+                    "error_id": 31,
+                    "error_type": "LLM_API_ERROR",
+                    "error_message": "llm failed",
+                    "error_detail": "RuntimeError: llm failed",
+                    "occurred_step": "ANSWER_GENERATION",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 2),
+                }
+            ],
         ),
     )
 
@@ -86,6 +96,16 @@ def test_get_admin_chat_log_api_returns_chat_log_detail(
                     "selected_as_citation": False,
                     "citation_order": None,
                     "created_at": "2026-04-27T10:00:01",
+                }
+            ],
+            "error_logs": [
+                {
+                    "error_id": 31,
+                    "error_type": "LLM_API_ERROR",
+                    "error_message": "llm failed",
+                    "error_detail": "RuntimeError: llm failed",
+                    "occurred_step": "ANSWER_GENERATION",
+                    "created_at": "2026-04-27T10:00:02",
                 }
             ],
         },

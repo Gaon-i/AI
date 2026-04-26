@@ -6,6 +6,7 @@ from app.core.exceptions import AppException
 from app.db.models.chat_enums import ChatAnswerStatus
 from app.schemas.chat import ChatRequest
 from app.services import chat_service
+from app.services.generator import AnswerGenerationResult
 
 
 class FakeSession:
@@ -90,7 +91,11 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     monkeypatch.setattr(
         chat_service,
         "generate_answer",
-        lambda *_args, **_kwargs: ("포털에서 외박 신청을 하면 됩니다.", "https://example.com/rules/1"),
+        lambda *_args, **_kwargs: AnswerGenerationResult(
+            answer="포털에서 외박 신청을 하면 됩니다. [C1]",
+            source_url="https://example.com/rules/1",
+            cited_regulation_chunk_ids=[1001],
+        ),
     )
     monkeypatch.setattr(
         chat_service,
@@ -100,7 +105,13 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     monkeypatch.setattr(
         chat_service,
         "mark_chat_retrieval_results_used_in_answer",
-        lambda *_args, **kwargs: retrieval_calls.update({"mark_used_chat_log_id": kwargs["chat_log_id"]}) or [],
+        lambda *_args, **kwargs: retrieval_calls.update(
+            {
+                "mark_used_chat_log_id": kwargs["chat_log_id"],
+                "cited_regulation_chunk_ids": kwargs["cited_regulation_chunk_ids"],
+            }
+        )
+        or [],
     )
 
     response = chat_service.answer_chat_question(
@@ -114,7 +125,7 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
 
     assert response.chat_log_id == 501
     assert response.session_id == "session-123"
-    assert response.answer == "포털에서 외박 신청을 하면 됩니다."
+    assert response.answer == "포털에서 외박 신청을 하면 됩니다. [C1]"
     assert response.answer_status == "SUCCESS"
     assert response.source_url == "https://example.com/rules/1"
     assert chat_log.answer_status == ChatAnswerStatus.SUCCESS
@@ -125,7 +136,9 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     assert retrieval_calls["chat_log_id"] == 501
     assert retrieval_calls["retrieval_method"] == chat_service.RETRIEVAL_METHOD_SINGLE
     assert retrieval_calls["retrieval_items"][0]["regulation_chunk_id"] == 1001
+    assert retrieval_calls["retrieval_items"][0]["citation_label"] == "C1"
     assert retrieval_calls["mark_used_chat_log_id"] == 501
+    assert retrieval_calls["cited_regulation_chunk_ids"] == [1001]
     assert db.commit_count == 2
     assert db.flush_count == 1
     assert db.rollback_count == 0
@@ -187,6 +200,7 @@ def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pyt
     chat_log = _build_chat_log()
 
     retrieval_calls: dict[str, object] = {}
+    error_log_calls: dict[str, object] = {}
 
     monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
     monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
@@ -223,6 +237,11 @@ def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pyt
         "mark_chat_retrieval_results_used_in_answer",
         lambda *_args, **_kwargs: pytest.fail("failed generation should not mark retrieval results used"),
     )
+    monkeypatch.setattr(
+        chat_service,
+        "create_chat_error_log",
+        lambda *_args, **kwargs: error_log_calls.update(kwargs) or object(),
+    )
 
     with pytest.raises(RuntimeError, match="llm failed"):
         chat_service.answer_chat_question(
@@ -238,6 +257,12 @@ def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pyt
     assert chat_log.rewritten_query == "외박 신청은 어디서 하나요?"
     assert chat_log.answer == ""
     assert retrieval_calls["chat_log_id"] == 501
+    assert error_log_calls["chat_log_id"] == 501
+    assert error_log_calls["session_id"] == "session-123"
+    assert error_log_calls["error_type"] == chat_service.ERROR_TYPE_LLM_API
+    assert error_log_calls["occurred_step"] == chat_service.STEP_ANSWER_GENERATION
+    assert error_log_calls["error_message"] == "llm failed"
+    assert error_log_calls["error_detail"] == "RuntimeError: llm failed"
     assert db.commit_count == 2
     assert db.flush_count == 1
     assert db.rollback_count == 1
@@ -310,3 +335,23 @@ def test_flatten_grouped_retrieval_items_deduplicates_same_chunk() -> None:
     assert len(result) == 2
     assert result[0]["regulation_chunk_id"] == 16
     assert result[1]["regulation_chunk_id"] == 13
+
+
+def test_assign_citation_labels_adds_sequential_labels() -> None:
+    result = chat_service._assign_citation_labels(
+        [
+            {"regulation_chunk_id": 16, "chunk_id": "chunk-a"},
+            {"regulation_chunk_id": 13, "chunk_id": "chunk-b"},
+        ]
+    )
+
+    assert result[0]["citation_label"] == "C1"
+    assert result[1]["citation_label"] == "C2"
+
+
+def test_build_chat_error_metadata_defaults_timeout_error() -> None:
+    result = chat_service._build_chat_error_metadata(TimeoutError("request timed out"))
+
+    assert result.error_type == chat_service.ERROR_TYPE_TIMEOUT
+    assert result.occurred_step is None
+    assert result.error_message == "request timed out"

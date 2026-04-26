@@ -47,12 +47,20 @@ def mark_chat_retrieval_results_used_in_answer(
     db: Session,
     *,
     chat_log_id: int,
+    cited_regulation_chunk_ids: list[int],
 ) -> list[ChatRetrievalResult]:
     statement = select(ChatRetrievalResult).where(ChatRetrievalResult.chat_log_id == chat_log_id)
     retrieval_results = list(db.execute(statement).scalars().all())
+    citation_order_by_chunk_id = {
+        regulation_chunk_id: order
+        for order, regulation_chunk_id in enumerate(cited_regulation_chunk_ids, start=1)
+    }
 
     for retrieval_result in retrieval_results:
-        retrieval_result.used_in_answer = True
+        citation_order = citation_order_by_chunk_id.get(retrieval_result.regulation_chunk_id)
+        retrieval_result.used_in_answer = citation_order is not None
+        retrieval_result.selected_as_citation = citation_order is not None
+        retrieval_result.citation_order = citation_order
 
     db.flush()
     for retrieval_result in retrieval_results:

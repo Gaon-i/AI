@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
+from pydantic import Field
 
 
 class AdminChatLogDetail(BaseModel):
@@ -17,7 +18,8 @@ class AdminChatLogDetail(BaseModel):
     retrieval_version: Optional[str] = None
     response_time: Optional[int] = None
     created_at: datetime
-    retrieval_results: list["AdminChatRetrievalResult"] = []
+    retrieval_results: list["AdminChatRetrievalResult"] = Field(default_factory=list)
+    error_logs: list["AdminChatErrorLog"] = Field(default_factory=list)
 
 
 class AdminChatRetrievalResult(BaseModel):
@@ -33,6 +35,15 @@ class AdminChatRetrievalResult(BaseModel):
     used_in_answer: bool
     selected_as_citation: bool
     citation_order: Optional[int] = None
+    created_at: datetime
+
+
+class AdminChatErrorLog(BaseModel):
+    error_id: int
+    error_type: str
+    error_message: str
+    error_detail: Optional[str] = None
+    occurred_step: Optional[str] = None
     created_at: datetime
 
 

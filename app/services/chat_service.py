@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from datetime import datetime
 from datetime import timedelta
 from time import perf_counter
@@ -11,12 +12,13 @@ from app.core.error_codes import CHAT_SESSION_NOT_FOUND
 from app.core.exceptions import AppException
 from app.core.time_utils import get_current_utc_time
 from app.db.models.chat_enums import ChatAnswerStatus
+from app.repositories.chat_error_log_repository import create_chat_error_log
 from app.repositories.chat_log_repository import create_chat_log
-from app.repositories.chat_retrieval_result_repository import create_chat_retrieval_results
-from app.repositories.chat_retrieval_result_repository import mark_chat_retrieval_results_used_in_answer
 from app.repositories.chat_log_repository import get_chat_session
 from app.repositories.chat_log_repository import touch_chat_session_activity
 from app.repositories.chat_log_repository import update_chat_log_result
+from app.repositories.chat_retrieval_result_repository import create_chat_retrieval_results
+from app.repositories.chat_retrieval_result_repository import mark_chat_retrieval_results_used_in_answer
 from app.repositories.regulation_chunk_repository import search_similar_chunks
 from app.schemas.chat import ChatRequest
 from app.schemas.chat import ChatResponse
@@ -26,14 +28,36 @@ from app.services.generator import generate_grouped_answer
 from app.services.validator import validate_question
 
 ANSWER_MODEL_NAME = "gpt-4o-mini"
-PROMPT_VERSION_SINGLE = "chat-answer-v1"
-PROMPT_VERSION_GROUPED = "chat-answer-grouped-v1"
+PROMPT_VERSION_SINGLE = "chat-answer-citation-v1"
+PROMPT_VERSION_GROUPED = "chat-answer-grouped-citation-v1"
 RETRIEVAL_VERSION_SINGLE = "dormitory-search-v1"
 RETRIEVAL_VERSION_GROUPED = "dormitory-search-grouped-v1"
 RETRIEVAL_METHOD_SINGLE = "vector_dormitory_top_k"
 RETRIEVAL_METHOD_GROUPED = "vector_grouped_dormitory_top_k"
 NO_ANSWER_MESSAGE = "관련 정보를 찾을 수 없습니다."
 INVALID_QUESTION_MESSAGE = "기숙사 관련 질문을 입력해주세요."
+
+ERROR_TYPE_TIMEOUT = "TIMEOUT"
+ERROR_TYPE_LLM_API = "LLM_API_ERROR"
+ERROR_TYPE_RETRIEVAL = "RETRIEVAL_ERROR"
+ERROR_TYPE_PROMPT_BUILD = "PROMPT_BUILD_ERROR"
+ERROR_TYPE_VALIDATION = "VALIDATION_ERROR"
+ERROR_TYPE_UNKNOWN = "UNKNOWN_ERROR"
+
+STEP_QUESTION_VALIDATION = "QUESTION_VALIDATION"
+STEP_QUERY_REWRITE = "QUERY_REWRITE"
+STEP_RETRIEVAL = "RETRIEVAL"
+STEP_RERANK = "RERANK"
+STEP_ANSWER_GENERATION = "ANSWER_GENERATION"
+STEP_RESPONSE_RENDERING = "RESPONSE_RENDERING"
+
+
+@dataclass(frozen=True)
+class ChatErrorMetadata:
+    error_type: str
+    occurred_step: Optional[str]
+    error_message: str
+    error_detail: Optional[str]
 
 
 def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
@@ -60,7 +84,15 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
     normalized_question = None
 
     try:
-        is_valid, normalized_question = validate_question(payload.question)
+        try:
+            is_valid, normalized_question = validate_question(payload.question)
+        except Exception as exc:
+            _attach_chat_error_metadata(
+                exc,
+                error_type=ERROR_TYPE_VALIDATION,
+                occurred_step=STEP_QUESTION_VALIDATION,
+            )
+            raise
 
         if not is_valid:
             return _finalize_chat_log(
@@ -94,7 +126,8 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
             question=normalized_question,
             started_at=started_at,
         )
-    except Exception:
+    except Exception as exc:
+        error_metadata = _build_chat_error_metadata(exc)
         db.rollback()
         _finalize_chat_log(
             db,
@@ -108,6 +141,7 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
             prompt_version=None,
             retrieval_version=None,
             response_time_ms=_elapsed_ms(started_at),
+            error_metadata=error_metadata,
         )
         raise
 
@@ -121,13 +155,21 @@ def _answer_single_dormitory_chat(
     dormitory: str,
     started_at: float,
 ) -> ChatResponse:
-    query_embedding = create_query_embedding(question)
-    chunks = search_similar_chunks(
-        db=db,
-        query_embedding=query_embedding,
-        dormitory=dormitory,
-        top_k=3,
-    )
+    try:
+        query_embedding = create_query_embedding(question)
+        chunks = search_similar_chunks(
+            db=db,
+            query_embedding=query_embedding,
+            dormitory=dormitory,
+            top_k=3,
+        )
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_RETRIEVAL,
+            occurred_step=STEP_RETRIEVAL,
+        )
+        raise
 
     if not chunks:
         return _finalize_chat_log(
@@ -144,26 +186,44 @@ def _answer_single_dormitory_chat(
             response_time_ms=_elapsed_ms(started_at),
         )
 
-    create_chat_retrieval_results(
-        db,
-        chat_log_id=chat_log.chat_log_id,
-        retrieval_items=chunks,
-        retrieval_method=RETRIEVAL_METHOD_SINGLE,
-    )
-    answer, source_url = generate_answer(question, chunks)
+    labeled_chunks = _assign_citation_labels(chunks)
+    try:
+        create_chat_retrieval_results(
+            db,
+            chat_log_id=chat_log.chat_log_id,
+            retrieval_items=labeled_chunks,
+            retrieval_method=RETRIEVAL_METHOD_SINGLE,
+        )
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_RETRIEVAL,
+            occurred_step=STEP_RETRIEVAL,
+        )
+        raise
+    try:
+        answer_result = generate_answer(question, labeled_chunks)
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_LLM_API,
+            occurred_step=STEP_ANSWER_GENERATION,
+        )
+        raise
     return _finalize_chat_log(
         db,
         chat_log=chat_log,
         session_id=session_id,
         answer_status=ChatAnswerStatus.SUCCESS,
-        answer=answer,
-        source_url=source_url or "",
+        answer=answer_result.answer,
+        source_url=answer_result.source_url or "",
         rewritten_query=question,
         model_name=ANSWER_MODEL_NAME,
         prompt_version=PROMPT_VERSION_SINGLE,
         retrieval_version=RETRIEVAL_VERSION_SINGLE,
         response_time_ms=_elapsed_ms(started_at),
         mark_retrieval_used=True,
+        cited_regulation_chunk_ids=answer_result.cited_regulation_chunk_ids,
     )
 
 
@@ -175,17 +235,33 @@ def _answer_grouped_chat(
     question: str,
     started_at: float,
 ) -> ChatResponse:
-    query_embedding = create_query_embedding(question)
+    try:
+        query_embedding = create_query_embedding(question)
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_RETRIEVAL,
+            occurred_step=STEP_RETRIEVAL,
+        )
+        raise
     dormitories = ["제1학생생활관", "제2학생생활관", "제3학생생활관"]
     dormitory_chunks: dict[str, list[dict]] = {}
 
-    for dormitory in dormitories:
-        dormitory_chunks[dormitory] = search_similar_chunks(
-            db=db,
-            query_embedding=query_embedding,
-            dormitory=dormitory,
-            top_k=2,
+    try:
+        for dormitory in dormitories:
+            dormitory_chunks[dormitory] = search_similar_chunks(
+                db=db,
+                query_embedding=query_embedding,
+                dormitory=dormitory,
+                top_k=2,
+            )
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_RETRIEVAL,
+            occurred_step=STEP_RETRIEVAL,
         )
+        raise
 
     if not any(dormitory_chunks.values()):
         return _finalize_chat_log(
@@ -202,27 +278,45 @@ def _answer_grouped_chat(
             response_time_ms=_elapsed_ms(started_at),
         )
 
-    flattened_chunks = _flatten_grouped_retrieval_items(dormitory_chunks)
-    create_chat_retrieval_results(
-        db,
-        chat_log_id=chat_log.chat_log_id,
-        retrieval_items=flattened_chunks,
-        retrieval_method=RETRIEVAL_METHOD_GROUPED,
-    )
-    answer, source_url = generate_grouped_answer(question, dormitory_chunks)
+    flattened_chunks = _assign_citation_labels(_flatten_grouped_retrieval_items(dormitory_chunks))
+    grouped_labeled_chunks = _group_retrieval_items_by_group(flattened_chunks)
+    try:
+        create_chat_retrieval_results(
+            db,
+            chat_log_id=chat_log.chat_log_id,
+            retrieval_items=flattened_chunks,
+            retrieval_method=RETRIEVAL_METHOD_GROUPED,
+        )
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_RETRIEVAL,
+            occurred_step=STEP_RETRIEVAL,
+        )
+        raise
+    try:
+        answer_result = generate_grouped_answer(question, grouped_labeled_chunks)
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_LLM_API,
+            occurred_step=STEP_ANSWER_GENERATION,
+        )
+        raise
     return _finalize_chat_log(
         db,
         chat_log=chat_log,
         session_id=session_id,
         answer_status=ChatAnswerStatus.SUCCESS,
-        answer=answer,
-        source_url=source_url or "",
+        answer=answer_result.answer,
+        source_url=answer_result.source_url or "",
         rewritten_query=question,
         model_name=ANSWER_MODEL_NAME,
         prompt_version=PROMPT_VERSION_GROUPED,
         retrieval_version=RETRIEVAL_VERSION_GROUPED,
         response_time_ms=_elapsed_ms(started_at),
         mark_retrieval_used=True,
+        cited_regulation_chunk_ids=answer_result.cited_regulation_chunk_ids,
     )
 
 
@@ -240,12 +334,23 @@ def _finalize_chat_log(
     retrieval_version: Optional[str],
     response_time_ms: int,
     mark_retrieval_used: bool = False,
+    cited_regulation_chunk_ids: Optional[list[int]] = None,
+    error_metadata: Optional[ChatErrorMetadata] = None,
 ) -> ChatResponse:
     if mark_retrieval_used:
-        mark_chat_retrieval_results_used_in_answer(
-            db,
-            chat_log_id=chat_log.chat_log_id,
-        )
+        try:
+            mark_chat_retrieval_results_used_in_answer(
+                db,
+                chat_log_id=chat_log.chat_log_id,
+                cited_regulation_chunk_ids=cited_regulation_chunk_ids or [],
+            )
+        except Exception as exc:
+            _attach_chat_error_metadata(
+                exc,
+                error_type=ERROR_TYPE_PROMPT_BUILD,
+                occurred_step=STEP_RESPONSE_RENDERING,
+            )
+            raise
     update_chat_log_result(
         db,
         chat_log,
@@ -257,6 +362,16 @@ def _finalize_chat_log(
         retrieval_version=retrieval_version,
         response_time=response_time_ms,
     )
+    if error_metadata is not None:
+        create_chat_error_log(
+            db,
+            chat_log_id=chat_log.chat_log_id,
+            session_id=session_id,
+            error_type=error_metadata.error_type,
+            error_message=error_metadata.error_message,
+            error_detail=error_metadata.error_detail,
+            occurred_step=error_metadata.occurred_step,
+        )
     db.commit()
     db.refresh(chat_log)
 
@@ -305,4 +420,54 @@ def _flatten_grouped_retrieval_items(dormitory_chunks: dict[str, list[dict]]) ->
         deduplicated_items.values(),
         key=lambda item: item.get("similarity", 0.0),
         reverse=True,
+    )
+
+
+def _assign_citation_labels(retrieval_items: list[dict]) -> list[dict]:
+    labeled_items: list[dict] = []
+    for index, item in enumerate(retrieval_items, start=1):
+        labeled_item = dict(item)
+        labeled_item["citation_label"] = f"C{index}"
+        labeled_items.append(labeled_item)
+    return labeled_items
+
+
+def _group_retrieval_items_by_group(retrieval_items: list[dict]) -> dict[str, list[dict]]:
+    grouped_items: dict[str, list[dict]] = {}
+    for item in retrieval_items:
+        retrieval_group = item.get("retrieval_group")
+        if retrieval_group is None:
+            continue
+        grouped_items.setdefault(retrieval_group, []).append(item)
+    return grouped_items
+
+
+def _attach_chat_error_metadata(
+    exc: Exception,
+    *,
+    error_type: str,
+    occurred_step: Optional[str],
+) -> None:
+    setattr(exc, "_chat_error_type", error_type)
+    setattr(exc, "_chat_occurred_step", occurred_step)
+
+
+def _build_chat_error_metadata(exc: Exception) -> ChatErrorMetadata:
+    error_type = getattr(exc, "_chat_error_type", None)
+    occurred_step = getattr(exc, "_chat_occurred_step", None)
+
+    if error_type is None:
+        if isinstance(exc, TimeoutError):
+            error_type = ERROR_TYPE_TIMEOUT
+        else:
+            error_type = ERROR_TYPE_UNKNOWN
+
+    error_message = str(exc).strip() or type(exc).__name__
+    error_detail = f"{type(exc).__name__}: {error_message}"
+
+    return ChatErrorMetadata(
+        error_type=error_type,
+        occurred_step=occurred_step,
+        error_message=error_message,
+        error_detail=error_detail,
     )

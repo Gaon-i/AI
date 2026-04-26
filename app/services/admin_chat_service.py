@@ -8,8 +8,10 @@ from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
 from app.core.time_utils import get_current_utc_time
 from app.repositories.admin_chat_repository import get_chat_log_by_id
+from app.repositories.admin_chat_repository import list_chat_error_logs_by_chat_log_id
 from app.repositories.admin_chat_repository import list_chat_retrieval_results_by_chat_log_id
 from app.repositories.admin_chat_repository import list_recent_chat_sessions
+from app.schemas.admin_chat import AdminChatErrorLog
 from app.schemas.admin_chat import AdminChatLogDetail
 from app.schemas.admin_chat import AdminChatRetrievalResult
 from app.schemas.admin_chat import AdminRecentChatSessionsResult
@@ -21,6 +23,7 @@ def get_admin_chat_log_detail(db: Session, chat_log_id: int) -> AdminChatLogDeta
     if chat_log is None:
         raise AppException(CHAT_LOG_NOT_FOUND)
     retrieval_results = list_chat_retrieval_results_by_chat_log_id(db, chat_log_id)
+    error_logs = list_chat_error_logs_by_chat_log_id(db, chat_log_id)
 
     return AdminChatLogDetail(
         chat_log_id=chat_log.chat_log_id,
@@ -52,6 +55,17 @@ def get_admin_chat_log_detail(db: Session, chat_log_id: int) -> AdminChatLogDeta
                 created_at=item.created_at,
             )
             for item in retrieval_results
+        ],
+        error_logs=[
+            AdminChatErrorLog(
+                error_id=item.error_id,
+                error_type=item.error_type,
+                error_message=item.error_message,
+                error_detail=item.error_detail,
+                occurred_step=item.occurred_step,
+                created_at=item.created_at,
+            )
+            for item in error_logs
         ],
     )
 

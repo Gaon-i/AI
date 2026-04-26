@@ -28,9 +28,19 @@ def create_app() -> FastAPI:
                 ),
             },
             {
-                "name": "admin-regulation-chunks",
+                "name": "admin-regulation-documents",
                 "description": (
-                    "관리자가 규정 청크를 적재하고 임베딩을 생성할 때 사용하는 API입니다."
+                    "관리자가 규정 원문 문서를 생성, 수정, 삭제하고 필요 시 rechunk를 수행할 때 사용하는 API입니다. "
+                    "문서 버전 관리와 문서 상태 변경이 중심입니다."
+                ),
+            },
+            {
+                "name": "admin-regulation-chunk-ingestion",
+                "description": (
+                    "내부 운영/복구용 청크 적재 API입니다. 일반적인 문서 등록 흐름에서는 관리자가 직접 호출하지 않고, "
+                    "`POST /api/v1/admin/regulations` 호출 시 서버 내부에서 자동 청킹과 임베딩 적재가 수행됩니다. "
+                    "이 태그의 API는 문서 생성 후 자동 적재가 실패했거나, 문서는 존재하지만 청크가 비어 있는 예외 상황에서만 "
+                    "수동 복구용으로 사용합니다. 기존 청크를 교체하는 작업은 이 태그가 아니라 문서 API의 `rechunk`를 사용합니다."
                 ),
             },
         ],

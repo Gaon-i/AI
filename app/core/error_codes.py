@@ -127,24 +127,9 @@ REGULATION_CHUNK_ALREADY_EXISTS = ErrorCode(
     message="regulation chunk already exists",
     status=409,
 )
-REGULATION_CHUNK_CREATE_FAILED = ErrorCode(
-    code="REGULATION_CHUNK_CREATE_FAILED",
-    message="failed to create regulation chunk",
-    status=500,
-)
-REGULATION_CHUNK_UPDATE_FAILED = ErrorCode(
-    code="REGULATION_CHUNK_UPDATE_FAILED",
-    message="failed to update regulation chunk",
-    status=500,
-)
-REGULATION_CHUNK_DELETE_FAILED = ErrorCode(
-    code="REGULATION_CHUNK_DELETE_FAILED",
-    message="failed to delete regulation chunk",
-    status=500,
-)
-REGULATION_CHUNK_BULK_CREATE_FAILED = ErrorCode(
-    code="REGULATION_CHUNK_BULK_CREATE_FAILED",
-    message="failed to create regulation chunks",
+REGULATION_CHUNK_INGEST_FAILED = ErrorCode(
+    code="REGULATION_CHUNK_INGEST_FAILED",
+    message="failed to ingest regulation chunks",
     status=500,
 )
 REGULATION_DOCUMENT_NOT_FOUND = ErrorCode(
@@ -170,6 +155,11 @@ REGULATION_DOCUMENT_UPDATE_FAILED = ErrorCode(
 REGULATION_DOCUMENT_DELETE_FAILED = ErrorCode(
     code="REGULATION_DOCUMENT_DELETE_FAILED",
     message="failed to delete regulation document",
+    status=500,
+)
+REGULATION_DOCUMENT_INGEST_FAILED = ErrorCode(
+    code="REGULATION_DOCUMENT_INGEST_FAILED",
+    message="failed to ingest regulation document",
     status=500,
 )
 NOTICE_SAVE_FAILED = ErrorCode(

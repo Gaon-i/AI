@@ -1,30 +1,17 @@
-"""관리자용 regulation_chunk 생성 API의 요청/응답 계약을 검증하는 테스트 파일입니다."""
+"""관리자용 regulation_chunk 최초 적재 API의 요청/응답 계약을 검증하는 테스트 파일입니다."""
 
 from fastapi.testclient import TestClient
 
-from app.api import admin_regulation_chunks as admin_regulation_chunks_module
+from app.api import admin_regulation_chunk_ingestion as admin_regulation_chunk_ingestion_module
 from app.core.error_codes import REGULATION_CHUNK_ALREADY_EXISTS
 from app.core.exceptions import AppException
-from app.schemas.regulation_chunk import RegulationChunkBulkCreateResult
-from app.schemas.regulation_chunk import RegulationChunkCreateResult
-from app.schemas.regulation_chunk import RegulationChunkSourceType
+from app.schemas.regulation_chunk import RegulationChunkBulkIngestionResult
+from app.schemas.regulation_chunk import RegulationChunkIngestionResult
 
 
 def build_request_payload() -> dict:
-    # 여러 API 테스트에서 공통으로 사용하는 정상 요청 바디입니다.
     return {
-        "document_id": "dorm-rule-001",
-        "document_version": "2026.04",
-        "chunk_id": "dorm-rule-001-03",
-        "chunk_index": 3,
-        "category": "외박",
-        "dormitory": "본관",
-        "title": "외박 신청",
-        "content": "외박은 사전에 신청해야 한다.",
-        "keywords": ["외박", "신청"],
-        "source": "생활관 규정집 2026",
-        "source_url": "https://example.com/rule",
-        "source_type": "official",
+        "regulation_document_id": 11,
     }
 
 
@@ -34,48 +21,28 @@ def build_admin_headers(token: str = "test-admin-token") -> dict[str, str]:
 
 
 def build_bulk_request_payload(count: int = 2) -> dict:
-    # 벌크 API 테스트에서 여러 청크를 한 번에 보내기 위한 공통 요청 바디입니다.
     return {
-        "items": [
-            {
-                "document_id": "dorm-rule-001",
-                "document_version": "2026.04",
-                "chunk_id": f"dorm-rule-001-{index:02d}",
-                "chunk_index": index,
-                "category": "외박",
-                "dormitory": "본관",
-                "title": f"외박 신청 {index}",
-                "content": "외박은 사전에 신청해야 한다.",
-                "keywords": ["외박", "신청"],
-                "source": "생활관 규정집 2026",
-                "source_url": "https://example.com/rule",
-                "source_type": "official",
-            }
-            for index in range(1, count + 1)
-        ]
+        "regulation_document_ids": list(range(1, count + 1)),
     }
 
 
-def test_create_regulation_chunk_api_returns_created_response(
+def test_ingest_regulation_chunks_from_document_api_returns_created_response(
     client: TestClient,
     monkeypatch,
 ) -> None:
     # API 계층 테스트에서는 실제 DB/임베딩 대신 service 반환값만 검증합니다.
-    def fake_create_regulation_chunk_with_embedding(*_args, **_kwargs) -> RegulationChunkCreateResult:
-        return RegulationChunkCreateResult(
-            regulation_chunk_id=1,
+    def fake_ingest_regulation_chunks_for_document(*_args, **_kwargs) -> RegulationChunkIngestionResult:
+        return RegulationChunkIngestionResult(
             regulation_document_id=11,
             document_id="dorm-rule-001",
             document_version="2026.04",
-            chunk_id="dorm-rule-001-03",
-            chunk_index=3,
-            source_type=RegulationChunkSourceType.OFFICIAL,
+            created_count=3,
         )
 
     monkeypatch.setattr(
-        admin_regulation_chunks_module,
-        "create_regulation_chunk_with_embedding",
-        fake_create_regulation_chunk_with_embedding,
+        admin_regulation_chunk_ingestion_module,
+        "ingest_regulation_chunks_for_document",
+        fake_ingest_regulation_chunks_for_document,
     )
 
     response = client.post(
@@ -87,31 +54,28 @@ def test_create_regulation_chunk_api_returns_created_response(
     assert response.status_code == 201
     assert response.json() == {
         "status": 201,
-        "message": "regulation chunk created",
+        "message": "regulation chunks created from document",
         "data": {
-            "regulation_chunk_id": 1,
             "regulation_document_id": 11,
             "document_id": "dorm-rule-001",
             "document_version": "2026.04",
-            "chunk_id": "dorm-rule-001-03",
-            "chunk_index": 3,
-            "source_type": "official",
+            "created_count": 3,
         },
         "error_code": None,
     }
 
 
-def test_create_regulation_chunk_api_returns_common_error_response(
+def test_ingest_regulation_chunks_from_document_api_returns_common_error_response(
     client: TestClient,
     monkeypatch,
 ) -> None:
     # service에서 도메인 예외를 던지면 전역 핸들러가 공통 에러 응답으로 변환해야 합니다.
-    def raise_duplicate_chunk(*_args, **_kwargs) -> RegulationChunkCreateResult:
+    def raise_duplicate_chunk(*_args, **_kwargs) -> RegulationChunkIngestionResult:
         raise AppException(REGULATION_CHUNK_ALREADY_EXISTS)
 
     monkeypatch.setattr(
-        admin_regulation_chunks_module,
-        "create_regulation_chunk_with_embedding",
+        admin_regulation_chunk_ingestion_module,
+        "ingest_regulation_chunks_for_document",
         raise_duplicate_chunk,
     )
 
@@ -130,12 +94,11 @@ def test_create_regulation_chunk_api_returns_common_error_response(
     }
 
 
-def test_create_regulation_chunk_api_returns_validation_error_for_invalid_body(
+def test_ingest_regulation_chunks_from_document_api_returns_validation_error_for_invalid_body(
     client: TestClient,
 ) -> None:
-    # 요청 바디가 schema를 통과하지 못하면 공통 validation 에러 응답이 내려와야 합니다.
     payload = build_request_payload()
-    payload["document_id"] = "   "
+    payload["regulation_document_id"] = 0
 
     response = client.post(
         "/api/v1/admin/regulation-chunks",
@@ -151,24 +114,24 @@ def test_create_regulation_chunk_api_returns_validation_error_for_invalid_body(
     assert body["data"]["errors"]
 
 
-def test_create_regulation_chunks_bulk_api_returns_created_response(
+def test_ingest_regulation_chunks_from_documents_bulk_api_returns_created_response(
     client: TestClient,
     monkeypatch,
 ) -> None:
     # 벌크 API도 단건과 동일한 공통 응답 포맷으로 성공 결과를 내려줘야 합니다.
-    def fake_create_regulation_chunks_with_embeddings(*_args, **_kwargs) -> RegulationChunkBulkCreateResult:
-        return RegulationChunkBulkCreateResult(
-            created_count=2,
+    def fake_ingest_regulation_chunks_for_documents(*_args, **_kwargs) -> RegulationChunkBulkIngestionResult:
+        return RegulationChunkBulkIngestionResult(
+            created_document_count=2,
             items=[
-                {"chunk_id": "dorm-rule-001-01", "status": "created"},
-                {"chunk_id": "dorm-rule-001-02", "status": "created"},
+                {"regulation_document_id": 1, "created_count": 3, "status": "created"},
+                {"regulation_document_id": 2, "created_count": 2, "status": "created"},
             ],
         )
 
     monkeypatch.setattr(
-        admin_regulation_chunks_module,
-        "create_regulation_chunks_with_embeddings",
-        fake_create_regulation_chunks_with_embeddings,
+        admin_regulation_chunk_ingestion_module,
+        "ingest_regulation_chunks_for_documents",
+        fake_ingest_regulation_chunks_for_documents,
     )
 
     response = client.post(
@@ -180,29 +143,29 @@ def test_create_regulation_chunks_bulk_api_returns_created_response(
     assert response.status_code == 201
     assert response.json() == {
         "status": 201,
-        "message": "regulation chunks created",
+        "message": "regulation chunks created from documents",
         "data": {
-            "created_count": 2,
+            "created_document_count": 2,
             "items": [
-                {"chunk_id": "dorm-rule-001-01", "status": "created"},
-                {"chunk_id": "dorm-rule-001-02", "status": "created"},
+                {"regulation_document_id": 1, "created_count": 3, "status": "created"},
+                {"regulation_document_id": 2, "created_count": 2, "status": "created"},
             ],
         },
         "error_code": None,
     }
 
 
-def test_create_regulation_chunks_bulk_api_returns_common_error_response(
+def test_ingest_regulation_chunks_from_documents_bulk_api_returns_common_error_response(
     client: TestClient,
     monkeypatch,
 ) -> None:
     # 벌크 적재 중 하나라도 실패하면 service 예외가 그대로 공통 에러 응답으로 변환돼야 합니다.
-    def raise_duplicate_chunk(*_args, **_kwargs) -> RegulationChunkBulkCreateResult:
+    def raise_duplicate_chunk(*_args, **_kwargs) -> RegulationChunkBulkIngestionResult:
         raise AppException(REGULATION_CHUNK_ALREADY_EXISTS)
 
     monkeypatch.setattr(
-        admin_regulation_chunks_module,
-        "create_regulation_chunks_with_embeddings",
+        admin_regulation_chunk_ingestion_module,
+        "ingest_regulation_chunks_for_documents",
         raise_duplicate_chunk,
     )
 
@@ -221,7 +184,7 @@ def test_create_regulation_chunks_bulk_api_returns_common_error_response(
     }
 
 
-def test_create_regulation_chunks_bulk_api_rejects_more_than_twenty_items(
+def test_ingest_regulation_chunks_from_documents_bulk_api_rejects_more_than_twenty_items(
     client: TestClient,
 ) -> None:
     # 요청 개수 제한은 schema 단계에서 먼저 막아 서버와 외부 API 부하를 낮춥니다.
@@ -239,7 +202,7 @@ def test_create_regulation_chunks_bulk_api_rejects_more_than_twenty_items(
     assert body["data"]["errors"]
 
 
-def test_admin_regulation_chunks_api_requires_admin_token(client: TestClient) -> None:
+def test_admin_regulation_chunk_ingestion_api_requires_admin_token(client: TestClient) -> None:
     # 관리자 토큰이 없으면 관리자 API는 인증 실패로 막혀야 합니다.
     response = client.post("/api/v1/admin/regulation-chunks", json=build_request_payload())
 
@@ -252,7 +215,7 @@ def test_admin_regulation_chunks_api_requires_admin_token(client: TestClient) ->
     }
 
 
-def test_admin_regulation_chunks_api_rejects_invalid_admin_token(client: TestClient) -> None:
+def test_admin_regulation_chunk_ingestion_api_rejects_invalid_admin_token(client: TestClient) -> None:
     # 잘못된 토큰으로는 관리자 API를 호출할 수 없어야 합니다.
     response = client.post(
         "/api/v1/admin/regulation-chunks",
@@ -269,7 +232,7 @@ def test_admin_regulation_chunks_api_rejects_invalid_admin_token(client: TestCli
     }
 
 
-def test_admin_regulation_chunks_bulk_api_requires_admin_token(client: TestClient) -> None:
+def test_admin_regulation_chunk_ingestion_bulk_api_requires_admin_token(client: TestClient) -> None:
     # router-level dependency가 bulk 엔드포인트에도 동일하게 적용되는지 확인합니다.
     response = client.post("/api/v1/admin/regulation-chunks/bulk", json=build_bulk_request_payload())
 
@@ -282,7 +245,7 @@ def test_admin_regulation_chunks_bulk_api_requires_admin_token(client: TestClien
     }
 
 
-def test_admin_regulation_chunks_api_returns_server_error_when_admin_token_setting_is_missing(
+def test_admin_regulation_chunk_ingestion_api_returns_server_error_when_admin_token_setting_is_missing(
     client: TestClient,
     monkeypatch,
 ) -> None:

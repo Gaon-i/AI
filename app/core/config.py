@@ -16,7 +16,20 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"
     openai_embedding_dimension: int = 1536
     openai_timeout_seconds: float = 10.0
-    regulation_chunk_max_length: int = 800
+    chat_answer_model: str = "gpt-4o-mini"
+    notice_summary_model: str = "gpt-4o-mini"
+    chat_prompt_version_single: str = "chat-answer-citation-v1"
+    chat_prompt_version_grouped: str = "chat-answer-unspecified-dormitory-citation-v1"
+    chat_retrieval_version_single: str = "dormitory-search-v1"
+    chat_retrieval_version_grouped: str = "dormitory-search-unspecified-v1"
+    chat_retrieval_method_single: str = "vector_dormitory_top_k"
+    chat_retrieval_method_grouped: str = "vector_unspecified_dormitory_top_k"
+    chat_no_answer_message: str = "관련 정보를 찾을 수 없습니다."
+    chat_invalid_question_message: str = "기숙사 관련 질문을 입력해주세요."
+    chat_single_dormitory_top_k: int = 3
+    chat_grouped_dormitory_top_k: int = 2
+    chat_grouped_dormitories: list[str] = ["제1학생생활관", "제2학생생활관", "제3학생생활관"]
+    regulation_chunk_max_length: int = 400
     chat_session_timeout_minutes: int = 30
 
 

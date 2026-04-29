@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 10.0
     chat_answer_model: str = "gpt-4o-mini"
     notice_summary_model: str = "gpt-4o-mini"
-    chat_prompt_version_single: str = "chat-answer-citation-v1"
-    chat_prompt_version_grouped: str = "chat-answer-unspecified-dormitory-citation-v1"
+    chat_prompt_version_single: str = "chat-answer-source-v1"
+    chat_prompt_version_grouped: str = "chat-answer-unspecified-dormitory-source-v1"
     chat_retrieval_version_single: str = "dormitory-search-v1"
     chat_retrieval_version_grouped: str = "dormitory-search-unspecified-v1"
     chat_retrieval_method_single: str = "vector_dormitory_top_k"

@@ -23,6 +23,7 @@ from app.repositories.chat_log_repository import update_chat_log_result
 from app.repositories.chat_retrieval_result_repository import create_chat_retrieval_results
 from app.repositories.chat_retrieval_result_repository import mark_chat_retrieval_results_used_in_answer
 from app.repositories.regulation_chunk_repository import search_similar_chunks
+from app.repositories.regulation_chunk_repository import search_similar_chunks_for_dormitories
 from app.schemas.chat import ChatRequest
 from app.schemas.chat import ChatResponse
 from app.services.embeddings import create_query_embedding
@@ -180,12 +181,11 @@ def _answer_single_dormitory_chat(
             response_time_ms=_elapsed_ms(started_at),
         )
 
-    labeled_chunks = _assign_citation_labels(chunks)
     try:
         create_chat_retrieval_results(
             db,
             chat_log_id=chat_log_id,
-            retrieval_items=labeled_chunks,
+            retrieval_items=chunks,
             retrieval_method=settings.chat_retrieval_method_single,
         )
     except Exception as exc:
@@ -196,9 +196,8 @@ def _answer_single_dormitory_chat(
         )
         raise
     db.commit()
-    db.close()
     try:
-        answer_result = generate_answer(question, labeled_chunks)
+        answer_result = generate_answer(question, chunks)
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,
@@ -206,6 +205,7 @@ def _answer_single_dormitory_chat(
             occurred_step=STEP_ANSWER_GENERATION,
         )
         raise
+    db.close()
     return _finalize_chat_log_in_new_session(
         chat_log_id=chat_log_id,
         session_id=session_id,
@@ -240,16 +240,13 @@ def _answer_unspecified_dormitory_chat(
             occurred_step=STEP_RETRIEVAL,
         )
         raise
-    dormitory_chunks: dict[str, list[dict]] = {}
-
     try:
-        for dormitory in settings.chat_grouped_dormitories:
-            dormitory_chunks[dormitory] = search_similar_chunks(
-                db=db,
-                query_embedding=query_embedding,
-                dormitory=dormitory,
-                top_k=settings.chat_grouped_dormitory_top_k,
-            )
+        chunks = search_similar_chunks_for_dormitories(
+            db=db,
+            query_embedding=query_embedding,
+            dormitories=settings.chat_grouped_dormitories,
+            top_k=settings.chat_grouped_dormitory_top_k,
+        )
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,
@@ -258,7 +255,7 @@ def _answer_unspecified_dormitory_chat(
         )
         raise
 
-    if not any(dormitory_chunks.values()):
+    if not chunks:
         return _finalize_chat_log(
             db,
             chat_log_id=chat_log_id,
@@ -273,12 +270,11 @@ def _answer_unspecified_dormitory_chat(
             response_time_ms=_elapsed_ms(started_at),
         )
 
-    flattened_chunks = _assign_citation_labels(_flatten_grouped_retrieval_items(dormitory_chunks))
     try:
         create_chat_retrieval_results(
             db,
             chat_log_id=chat_log_id,
-            retrieval_items=flattened_chunks,
+            retrieval_items=chunks,
             retrieval_method=settings.chat_retrieval_method_grouped,
         )
     except Exception as exc:
@@ -289,9 +285,8 @@ def _answer_unspecified_dormitory_chat(
         )
         raise
     db.commit()
-    db.close()
     try:
-        answer_result = generate_answer(question, flattened_chunks)
+        answer_result = generate_answer(question, chunks)
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,
@@ -299,6 +294,7 @@ def _answer_unspecified_dormitory_chat(
             occurred_step=STEP_ANSWER_GENERATION,
         )
         raise
+    db.close()
     return _finalize_chat_log_in_new_session(
         chat_log_id=chat_log_id,
         session_id=session_id,
@@ -438,36 +434,6 @@ def _build_chat_session_expired_message() -> str:
         f"chat session expired after {settings.chat_session_timeout_minutes} minutes of inactivity. "
         "please start a new chat session"
     )
-
-
-def _flatten_grouped_retrieval_items(dormitory_chunks: dict[str, list[dict]]) -> list[dict]:
-    deduplicated_items: dict[int, dict] = {}
-    for dormitory, chunks in dormitory_chunks.items():
-        for chunk in chunks:
-            regulation_chunk_id = chunk.get("regulation_chunk_id")
-            if regulation_chunk_id is None:
-                continue
-
-            existing_item = deduplicated_items.get(regulation_chunk_id)
-            if existing_item is None or chunk.get("similarity", 0.0) > existing_item.get("similarity", 0.0):
-                flattened_item = dict(chunk)
-                flattened_item["retrieval_group"] = dormitory
-                deduplicated_items[regulation_chunk_id] = flattened_item
-
-    return sorted(
-        deduplicated_items.values(),
-        key=lambda item: item.get("similarity", 0.0),
-        reverse=True,
-    )
-
-
-def _assign_citation_labels(retrieval_items: list[dict]) -> list[dict]:
-    labeled_items: list[dict] = []
-    for index, item in enumerate(retrieval_items, start=1):
-        labeled_item = dict(item)
-        labeled_item["citation_label"] = f"C{index}"
-        labeled_items.append(labeled_item)
-    return labeled_items
 
 
 def _attach_chat_error_metadata(

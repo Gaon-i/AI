@@ -79,7 +79,14 @@ def get_recent_admin_chat_sessions(db: Session) -> AdminRecentChatSessionsResult
                 user_id=session.user_id,
                 total_turns=session.total_turns,
                 started_at=session.started_at,
+                ended_at=session.ended_at,
                 last_activity_at=session.last_activity_at,
+                entry_point=session.entry_point,
+                is_returning_user=session.is_returning_user,
+                utm_source=session.utm_source,
+                utm_medium=session.utm_medium,
+                utm_campaign=session.utm_campaign,
+                created_at=session.created_at,
                 is_expired=_is_chat_session_expired(session.last_activity_at),
             )
             for session in sessions

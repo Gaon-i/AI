@@ -130,7 +130,14 @@ def test_chat_session_columns_match_expected_schema() -> None:
         "user_id",
         "total_turns",
         "started_at",
+        "ended_at",
         "last_activity_at",
+        "entry_point",
+        "is_returning_user",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "created_at",
     }
 
 
@@ -141,7 +148,13 @@ def test_chat_session_indexes_match_expected_schema() -> None:
     assert index_names == {
         "idx_chat_session_user_id",
         "idx_chat_session_started_at",
+        "idx_chat_session_ended_at",
         "idx_chat_session_last_activity_at",
+        "idx_chat_session_entry_point",
+        "idx_chat_session_is_returning_user",
+        "idx_chat_session_utm_source",
+        "idx_chat_session_utm_medium",
+        "idx_chat_session_utm_campaign",
     }
 
 

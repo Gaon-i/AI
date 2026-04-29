@@ -52,7 +52,14 @@ class AdminChatSessionSummary(BaseModel):
     user_id: Optional[int] = None
     total_turns: int
     started_at: datetime
+    ended_at: Optional[datetime] = None
     last_activity_at: datetime
+    entry_point: Optional[str] = None
+    is_returning_user: bool
+    utm_source: Optional[str] = None
+    utm_medium: Optional[str] = None
+    utm_campaign: Optional[str] = None
+    created_at: datetime
     is_expired: bool
 
 

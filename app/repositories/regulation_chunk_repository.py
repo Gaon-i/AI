@@ -12,6 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.error_codes import INVALID_EMBEDDING_RESPONSE
+from app.core.exceptions import AppException
 from app.db.models.regulation_document import RegulationDocument
 from app.db.models.regulation_chunk import RegulationChunk
 
@@ -23,6 +25,9 @@ def create_regulation_chunks_for_document(
     embeddings: list[list[float]],
 ) -> list[RegulationChunk]:
     settings = get_settings()
+    if len(chunk_texts) != len(embeddings):
+        raise AppException(INVALID_EMBEDDING_RESPONSE)
+
     created_chunks: list[RegulationChunk] = []
     ingestion_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + uuid4().hex[:8]
 

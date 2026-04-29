@@ -2,6 +2,10 @@
 
 from types import SimpleNamespace
 
+import pytest
+
+from app.core.error_codes import INVALID_EMBEDDING_RESPONSE
+from app.core.exceptions import AppException
 from app.repositories import regulation_chunk_repository
 
 
@@ -51,6 +55,31 @@ def test_create_regulation_chunks_for_document_maps_document_fields_to_model() -
     assert regulation_chunk.embedding_model == "text-embedding-3-small"
     assert db.flush_called is True
     assert db.refresh_called_values == [regulation_chunk]
+
+
+def test_create_regulation_chunks_for_document_rejects_embedding_count_mismatch() -> None:
+    db = FakeSession()
+    regulation_document = SimpleNamespace(
+        regulation_document_id=7,
+        document_id="dorm-rule-001",
+        document_version="2026.04",
+        keywords=["외박", "외출"],
+    )
+    regulation_chunk_repository.get_settings = lambda: SimpleNamespace(
+        openai_embedding_model="text-embedding-3-small"
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        regulation_chunk_repository.create_regulation_chunks_for_document(
+            db=db,
+            regulation_document=regulation_document,
+            chunk_texts=["첫 번째 청크", "두 번째 청크"],
+            embeddings=[[0.1] * 1536],
+        )
+
+    assert exc_info.value.error_code == INVALID_EMBEDDING_RESPONSE
+    assert db.added == []
+    assert db.flush_called is False
 
 
 def test_count_chunks_for_document_uses_count_query() -> None:

@@ -9,6 +9,11 @@ from app.services import chat_service
 from app.services.generator import AnswerGenerationResult
 
 
+@pytest.fixture(autouse=True)
+def freeze_chat_service_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(chat_service, "get_current_utc_time", lambda: datetime(2026, 4, 29, 10, 10, 0))
+
+
 class FakeSession:
     def __init__(self) -> None:
         self.commit_count = 0

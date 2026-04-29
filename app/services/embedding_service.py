@@ -58,7 +58,11 @@ def create_embeddings_batch(
         except ValueError as exc:
             raise AppException(INVALID_EMBEDDING_RESPONSE) from exc
 
-        return _parse_embeddings_response(response_payload, settings.openai_embedding_dimension)
+        return _parse_embeddings_response(
+            response_payload,
+            expected_dimension=settings.openai_embedding_dimension,
+            expected_count=len(texts),
+        )
     except httpx.TimeoutException as exc:
         raise AppException(OPENAI_API_TIMEOUT) from exc
     except httpx.HTTPStatusError as exc:
@@ -70,16 +74,27 @@ def create_embeddings_batch(
             http_client.close()
 
 
-def _parse_embeddings_response(payload: dict[str, Any], expected_dimension: int) -> list[list[float]]:
+def _parse_embeddings_response(
+    payload: dict[str, Any],
+    *,
+    expected_dimension: int,
+    expected_count: int,
+) -> list[list[float]]:
     """OpenAI 응답 JSON에서 임베딩 배열 목록을 꺼내고 형식을 검증합니다."""
 
     data = payload.get("data")
-    if not isinstance(data, list) or not data:
+    if not isinstance(data, list) or len(data) != expected_count:
         raise AppException(INVALID_EMBEDDING_RESPONSE)
 
-    embeddings: list[list[float]] = []
+    embeddings_by_index: list[Optional[list[float]]] = [None] * expected_count
     for item in data:
         if not isinstance(item, dict):
+            raise AppException(INVALID_EMBEDDING_RESPONSE)
+
+        index = item.get("index")
+        if not isinstance(index, int) or index < 0 or index >= expected_count:
+            raise AppException(INVALID_EMBEDDING_RESPONSE)
+        if embeddings_by_index[index] is not None:
             raise AppException(INVALID_EMBEDDING_RESPONSE)
 
         embedding = item.get("embedding")
@@ -90,11 +105,14 @@ def _parse_embeddings_response(payload: dict[str, Any], expected_dimension: int)
             raise AppException(EMBEDDING_DIMENSION_MISMATCH)
 
         try:
-            embeddings.append([float(value) for value in embedding])
+            embeddings_by_index[index] = [float(value) for value in embedding]
         except (TypeError, ValueError) as exc:
             raise AppException(INVALID_EMBEDDING_RESPONSE) from exc
 
-    return embeddings
+    if any(embedding is None for embedding in embeddings_by_index):
+        raise AppException(INVALID_EMBEDDING_RESPONSE)
+
+    return [embedding for embedding in embeddings_by_index if embedding is not None]
 
 
 def _extract_http_error_message(response: httpx.Response) -> str:

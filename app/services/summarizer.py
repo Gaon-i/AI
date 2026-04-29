@@ -9,6 +9,7 @@ client = OpenAI(api_key=settings.openai_api_key)
 
 
 def summarize_notice(title: str, content: str) -> NoticeSummaryData:
+    settings = get_settings()
     prompt = f"""
 다음 공지사항을 읽고 JSON만 반환해줘.
 
@@ -26,7 +27,7 @@ def summarize_notice(title: str, content: str) -> NoticeSummaryData:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=settings.notice_summary_model,
         temperature=0.3,
         messages=[
             {"role": "user", "content": prompt}

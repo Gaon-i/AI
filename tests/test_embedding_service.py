@@ -65,7 +65,7 @@ def test_create_embedding_returns_embedding(monkeypatch: pytest.MonkeyPatch) -> 
     response = httpx.Response(
         status_code=200,
         request=request,
-        json={"data": [{"embedding": [0.1] * 1536}]},
+        json={"data": [{"index": 0, "embedding": [0.1] * 1536}]},
     )
     client = FakeClient(response=response)
 
@@ -91,7 +91,7 @@ def test_create_embedding_raises_for_dimension_mismatch(monkeypatch: pytest.Monk
     response = httpx.Response(
         status_code=200,
         request=request,
-        json={"data": [{"embedding": [0.1, 0.2]}]},
+        json={"data": [{"index": 0, "embedding": [0.1, 0.2]}]},
     )
 
     with pytest.raises(AppException) as exc_info:
@@ -151,8 +151,8 @@ def test_create_embeddings_batch_returns_embeddings(monkeypatch: pytest.MonkeyPa
         request=request,
         json={
             "data": [
-                {"embedding": [0.1] * 1536},
-                {"embedding": [0.2] * 1536},
+                {"index": 0, "embedding": [0.1] * 1536},
+                {"index": 1, "embedding": [0.2] * 1536},
             ]
         },
     )
@@ -168,3 +168,74 @@ def test_create_embeddings_batch_returns_embeddings(monkeypatch: pytest.MonkeyPa
         "model": "text-embedding-3-small",
         "dimensions": 1536,
     }
+
+
+def test_create_embeddings_batch_orders_embeddings_by_response_index(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # OpenAI 응답 순서가 바뀌어도 index 기준으로 요청 순서를 복원해야 합니다.
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+    response = httpx.Response(
+        status_code=200,
+        request=request,
+        json={
+            "data": [
+                {"index": 1, "embedding": [0.2] * 1536},
+                {"index": 0, "embedding": [0.1] * 1536},
+            ]
+        },
+    )
+
+    embeddings = create_embeddings_batch(["첫 번째", "두 번째"], client=FakeClient(response=response))
+
+    assert embeddings[0][0] == 0.1
+    assert embeddings[1][0] == 0.2
+
+
+def test_create_embeddings_batch_raises_when_response_index_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # index가 없으면 청크와 임베딩의 매칭을 보장할 수 없으므로 실패시킵니다.
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+    response = httpx.Response(
+        status_code=200,
+        request=request,
+        json={"data": [{"embedding": [0.1] * 1536}]},
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        create_embedding("생활관: 본관", client=FakeClient(response=response))
+
+    assert exc_info.value.error_code == INVALID_EMBEDDING_RESPONSE
+
+
+def test_create_embeddings_batch_raises_when_response_count_mismatches(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 요청한 텍스트 개수와 응답 개수가 다르면 조용히 일부 청크가 누락되지 않아야 합니다.
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+    response = httpx.Response(
+        status_code=200,
+        request=request,
+        json={"data": [{"index": 0, "embedding": [0.1] * 1536}]},
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        create_embeddings_batch(["첫 번째", "두 번째"], client=FakeClient(response=response))
+
+    assert exc_info.value.error_code == INVALID_EMBEDDING_RESPONSE

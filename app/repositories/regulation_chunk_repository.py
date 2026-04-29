@@ -12,6 +12,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.error_codes import INVALID_EMBEDDING_RESPONSE
+from app.core.exceptions import AppException
 from app.db.models.regulation_document import RegulationDocument
 from app.db.models.regulation_chunk import RegulationChunk
 
@@ -23,6 +25,9 @@ def create_regulation_chunks_for_document(
     embeddings: list[list[float]],
 ) -> list[RegulationChunk]:
     settings = get_settings()
+    if len(chunk_texts) != len(embeddings):
+        raise AppException(INVALID_EMBEDDING_RESPONSE)
+
     created_chunks: list[RegulationChunk] = []
     ingestion_suffix = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S") + uuid4().hex[:8]
 
@@ -105,6 +110,7 @@ def search_similar_chunks(
             rd.document_version,
             rc.chunk_id,
             COALESCE(rc.chunk_text, rd.content, '') AS content,
+            rd.source,
             rd.source_url,
             1 - (rc.embedding <=> CAST(:embedding AS vector)) AS similarity
         FROM regulation_chunk rc
@@ -135,7 +141,67 @@ def search_similar_chunks(
             "document_version": row.document_version,
             "chunk_id": row.chunk_id,
             "content": row.content,
+            "source": row.source,
             "source_url": row.source_url,
+            "similarity": float(row.similarity),
+        }
+        for row in result
+    ]
+
+
+def search_similar_chunks_for_dormitories(
+    db: Session,
+    query_embedding: list[float],
+    dormitories: list[str],
+    top_k: int = 3,
+):
+    """여러 생활관과 공통 문서를 한 번의 pgvector 검색으로 조회합니다."""
+
+    embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
+
+    sql = text(
+        """
+        SELECT
+            rc.regulation_chunk_id,
+            rd.document_id,
+            rd.document_version,
+            rc.chunk_id,
+            COALESCE(rc.chunk_text, rd.content, '') AS content,
+            rd.source,
+            rd.source_url,
+            rd.dormitory,
+            1 - (rc.embedding <=> CAST(:embedding AS vector)) AS similarity
+        FROM regulation_chunk rc
+        JOIN regulation_document rd
+          ON rd.regulation_document_id = rc.regulation_document_id
+        WHERE (rd.dormitory = ANY(:dormitories) OR rd.dormitory IS NULL)
+          AND rc.is_active = TRUE
+          AND rd.is_active = TRUE
+          AND rc.embedding IS NOT NULL
+        ORDER BY rc.embedding <=> CAST(:embedding AS vector)
+        LIMIT :top_k
+        """
+    )
+
+    result = db.execute(
+        sql,
+        {
+            "embedding": embedding_str,
+            "dormitories": dormitories,
+            "top_k": top_k,
+        },
+    ).mappings().all()
+
+    return [
+        {
+            "regulation_chunk_id": row.regulation_chunk_id,
+            "document_id": row.document_id,
+            "document_version": row.document_version,
+            "chunk_id": row.chunk_id,
+            "content": row.content,
+            "source": row.source,
+            "source_url": row.source_url,
+            "retrieval_group": row.dormitory,
             "similarity": float(row.similarity),
         }
         for row in result

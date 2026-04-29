@@ -8,9 +8,6 @@ settings = get_settings()
 client = OpenAI(api_key=settings.openai_api_key)
 
 
-NO_ANSWER_MESSAGE = "관련 정보를 찾을 수 없습니다."
-
-
 @dataclass(frozen=True)
 class AnswerGenerationResult:
     answer: str
@@ -22,10 +19,11 @@ def generate_answer(question: str, chunks: list[dict]) -> AnswerGenerationResult
     """
     검색된 chunk들을 기반으로 최종 답변 생성
     """
+    settings = get_settings()
 
     if not chunks:
         return AnswerGenerationResult(
-            answer=NO_ANSWER_MESSAGE,
+            answer=settings.chat_no_answer_message,
             source_url="",
             cited_regulation_chunk_ids=[],
         )
@@ -41,9 +39,12 @@ def generate_answer(question: str, chunks: list[dict]) -> AnswerGenerationResult
 너는 기숙사 안내 챗봇이다.
 아래 제공된 정보를 기반으로만 질문에 답변해라.
 모르는 내용은 추측하지 말고 모른다고 말해라.
+질문에서 생활관을 특정하지 않았고 참고 정보가 특정 생활관에만 해당하면, 해당 생활관 기준 답변임을 명확히 밝혀라.
+질문에서 생활관을 특정하지 않았더라도 생활관별 구분을 강제로 만들지 말고, 가장 관련 있는 정보 중심으로 간결하게 답변해라.
+참고 정보에 생활관 구분이 없거나 공통 규정으로 보이면 일반 답변으로 안내해라.
 답변에서 참고한 근거가 있으면 문장 끝에 반드시 근거 라벨을 붙여라.
 근거 라벨은 제공된 형식 그대로 `[C1]`, `[C2]`처럼 사용해라.
-질문에 답할 정보가 충분하지 않으면 정확히 "{NO_ANSWER_MESSAGE}"라고만 답해라.
+질문에 답할 정보가 충분하지 않으면 정확히 "{settings.chat_no_answer_message}"라고만 답해라.
 
 [질문]
 {question}
@@ -53,7 +54,7 @@ def generate_answer(question: str, chunks: list[dict]) -> AnswerGenerationResult
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=settings.chat_answer_model,
         temperature=0.3,
         messages=[
             {"role": "user", "content": prompt}
@@ -64,68 +65,6 @@ def generate_answer(question: str, chunks: list[dict]) -> AnswerGenerationResult
     cited_regulation_chunk_ids = _extract_cited_regulation_chunk_ids(answer, chunks)
     source_url = _resolve_source_url(chunks, cited_regulation_chunk_ids)
 
-    return AnswerGenerationResult(
-        answer=answer,
-        source_url=source_url,
-        cited_regulation_chunk_ids=cited_regulation_chunk_ids,
-    )
-
-
-def generate_grouped_answer(question: str, dormitory_chunks: dict[str, list[dict]]) -> AnswerGenerationResult:
-    """
-    dormitory가 없을 때 생활관별 검색 결과를 나눠서 답변 생성
-    """
-    available = {k: v for k, v in dormitory_chunks.items() if v}
-
-    if not available:
-        return AnswerGenerationResult(
-            answer=NO_ANSWER_MESSAGE,
-            source_url="",
-            cited_regulation_chunk_ids=[],
-        )
-
-    context_parts = []
-    all_chunks: list[dict] = []
-
-    for dormitory, chunks in available.items():
-        all_chunks.extend(chunks)
-        joined = "\n".join([f"- [{chunk['citation_label']}] {chunk['content']}" for chunk in chunks])
-        context_parts.append(f"[{dormitory}]\n{joined}")
-
-    context = "\n\n".join(context_parts)
-
-    prompt = f"""
-너는 기숙사 안내 챗봇이다.
-아래 제공된 정보를 기반으로만 답변해라.
-반드시 생활관별로 구분해서 설명해라.
-정보가 없는 생활관은 언급하지 않아도 된다.
-모르는 내용은 추측하지 말고 제공된 정보 범위에서만 답변해라.
-각 생활관 설명 문장 끝에는 반드시 해당 근거 라벨 `[C1]`, `[C2]`를 붙여라.
-질문에 답할 정보가 충분하지 않으면 정확히 "{NO_ANSWER_MESSAGE}"라고만 답해라.
-
-출력 형식 예시:
-제1학생생활관: ... [C1]
-제2학생생활관: ... [C2]
-제3학생생활관: ... [C3]
-
-[질문]
-{question}
-
-[생활관별 참고 정보]
-{context}
-"""
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0.3,
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-    )
-
-    answer = response.choices[0].message.content.strip()
-    cited_regulation_chunk_ids = _extract_cited_regulation_chunk_ids(answer, all_chunks)
-    source_url = _resolve_source_url(all_chunks, cited_regulation_chunk_ids)
     return AnswerGenerationResult(
         answer=answer,
         source_url=source_url,

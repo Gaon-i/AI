@@ -41,7 +41,7 @@ def _build_chat_session():
             "session_id": "session-123",
             "user_id": 7,
             "total_turns": 0,
-            "last_activity_at": datetime(2026, 4, 27, 10, 0, 0),
+            "last_activity_at": datetime(2026, 4, 29, 10, 0, 0),
         },
     )()
 
@@ -130,6 +130,7 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
         ),
     )
 
+    settings = chat_service.get_settings()
     assert response.chat_log_id == 501
     assert response.session_id == "session-123"
     assert response.answer == "포털에서 외박 신청을 하면 됩니다. [C1]"
@@ -137,11 +138,11 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     assert response.source_url == "https://example.com/rules/1"
     assert chat_log.answer_status == ChatAnswerStatus.SUCCESS
     assert chat_log.rewritten_query == "외박 신청은 어디서 하나요?"
-    assert chat_log.model_name == chat_service.ANSWER_MODEL_NAME
-    assert chat_log.prompt_version == chat_service.PROMPT_VERSION_SINGLE
-    assert chat_log.retrieval_version == chat_service.RETRIEVAL_VERSION_SINGLE
+    assert chat_log.model_name == settings.chat_answer_model
+    assert chat_log.prompt_version == settings.chat_prompt_version_single
+    assert chat_log.retrieval_version == settings.chat_retrieval_version_single
     assert retrieval_calls["chat_log_id"] == 501
-    assert retrieval_calls["retrieval_method"] == chat_service.RETRIEVAL_METHOD_SINGLE
+    assert retrieval_calls["retrieval_method"] == settings.chat_retrieval_method_single
     assert retrieval_calls["retrieval_items"][0]["regulation_chunk_id"] == 1001
     assert retrieval_calls["retrieval_items"][0]["citation_label"] == "C1"
     assert retrieval_calls["mark_used_chat_log_id"] == 501
@@ -152,6 +153,106 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     assert db.flush_count == 0
     assert finalize_db.flush_count == 1
     assert db.rollback_count == 0
+
+
+def test_answer_chat_question_uses_top_scored_chunks_when_dormitory_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = FakeSession()
+    finalize_db = FakeSession()
+    chat_session = _build_chat_session()
+    chat_log = _build_chat_log()
+
+    retrieval_calls: dict[str, object] = {}
+    search_dormitories: list[str] = []
+    generated_chunks: list[dict] = []
+
+    monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "get_session_factory", lambda: (lambda: finalize_db))
+    monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (True, "택배는 어디서 받나요?"))
+    monkeypatch.setattr(chat_service, "create_query_embedding", lambda *_args, **_kwargs: [0.1, 0.2, 0.3])
+
+    def fake_search_similar_chunks(*_args, **kwargs):
+        dormitory = kwargs["dormitory"]
+        search_dormitories.append(dormitory)
+        if dormitory == "제1학생생활관":
+            return [
+                {
+                    "regulation_chunk_id": 1001,
+                    "document_id": "parcel-1",
+                    "document_version": "v1",
+                    "chunk_id": "chunk-1",
+                    "content": "생활관: 제1학생생활관\n본문: 택배는 1관 행정실에서 받습니다.",
+                    "source_url": "https://example.com/rules/1",
+                    "similarity": 0.72,
+                }
+            ]
+        if dormitory == "제2학생생활관":
+            return [
+                {
+                    "regulation_chunk_id": 1002,
+                    "document_id": "parcel-2",
+                    "document_version": "v1",
+                    "chunk_id": "chunk-2",
+                    "content": "생활관: 제2학생생활관\n본문: 택배는 2관 택배실에서 받습니다.",
+                    "source_url": "https://example.com/rules/2",
+                    "similarity": 0.94,
+                }
+            ]
+        return []
+
+    def fake_generate_answer(_question, chunks):
+        generated_chunks.extend(chunks)
+        return AnswerGenerationResult(
+            answer="제2학생생활관 기준으로 택배는 택배실에서 받습니다. [C1]",
+            source_url="https://example.com/rules/2",
+            cited_regulation_chunk_ids=[1002],
+        )
+
+    monkeypatch.setattr(chat_service, "search_similar_chunks", fake_search_similar_chunks)
+    monkeypatch.setattr(chat_service, "generate_answer", fake_generate_answer)
+    monkeypatch.setattr(
+        chat_service,
+        "create_chat_retrieval_results",
+        lambda *_args, **kwargs: retrieval_calls.update(kwargs) or [],
+    )
+    monkeypatch.setattr(
+        chat_service,
+        "mark_chat_retrieval_results_used_in_answer",
+        lambda *_args, **kwargs: retrieval_calls.update(
+            {
+                "mark_used_chat_log_id": kwargs["chat_log_id"],
+                "cited_regulation_chunk_ids": kwargs["cited_regulation_chunk_ids"],
+            }
+        )
+        or [],
+    )
+
+    response = chat_service.answer_chat_question(
+        db,
+        ChatRequest(
+            session_id="session-123",
+            question="택배는 어디서 받나요?",
+        ),
+    )
+
+    settings = chat_service.get_settings()
+    assert search_dormitories == settings.chat_grouped_dormitories
+    assert generated_chunks[0]["regulation_chunk_id"] == 1002
+    assert generated_chunks[0]["citation_label"] == "C1"
+    assert generated_chunks[1]["regulation_chunk_id"] == 1001
+    assert generated_chunks[1]["citation_label"] == "C2"
+    assert retrieval_calls["retrieval_method"] == settings.chat_retrieval_method_grouped
+    assert retrieval_calls["retrieval_items"][0]["regulation_chunk_id"] == 1002
+    assert retrieval_calls["retrieval_items"][1]["regulation_chunk_id"] == 1001
+    assert retrieval_calls["cited_regulation_chunk_ids"] == [1002]
+    assert response.answer == "제2학생생활관 기준으로 택배는 택배실에서 받습니다. [C1]"
+    assert response.source_url == "https://example.com/rules/2"
+    assert chat_log.prompt_version == settings.chat_prompt_version_grouped
+    assert chat_log.retrieval_version == settings.chat_retrieval_version_grouped
 
 
 def test_answer_chat_question_returns_no_answer_for_invalid_question(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -178,7 +279,7 @@ def test_answer_chat_question_returns_no_answer_for_invalid_question(monkeypatch
         ),
     )
 
-    assert response.answer == chat_service.INVALID_QUESTION_MESSAGE
+    assert response.answer == chat_service.get_settings().chat_invalid_question_message
     assert response.answer_status == "NO_ANSWER"
     assert response.source_url == ""
     assert chat_log.answer_status == ChatAnswerStatus.NO_ANSWER

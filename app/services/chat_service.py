@@ -167,7 +167,7 @@ def _answer_single_dormitory_chat(
             top_k=settings.chat_single_dormitory_top_k,
         )
 
-
+        # 1차 검색 결과가 없거나 유사도가 낮으면 전체 생활관 fallback 검색
         if _should_fallback_retrieval(chunks):
             chunks = search_similar_chunks_all_dormitories(
                 db=db,
@@ -201,26 +201,16 @@ def _answer_single_dormitory_chat(
         )
 
     try:
-        create_chat_retrieval_results(
-            db,
-            chat_log_id=chat_log_id,
-            retrieval_items=chunks,
-            retrieval_method=retrieval_method,
+        # 먼저 현재 검색 결과로 답변 생성
+        answer_result = generate_answer(
+            question,
+            chunks,
+            dormitory=dormitory,
+            is_fallback=retrieval_method == settings.chat_retrieval_method_fallback,
         )
-    except Exception as exc:
-        _attach_chat_error_metadata(
-            exc,
-            error_type=ERROR_TYPE_RETRIEVAL,
-            occurred_step=STEP_RETRIEVAL,
-        )
-        raise
-    db.commit()
-    try:
-        answer_result = generate_answer(question, 
-                                        chunks,
-                                        dormitory=dormitory,
-                                        is_fallback=retrieval_method == settings.chat_retrieval_method_fallback,)
 
+        # 검색 결과는 있었지만 답변 생성기가 "관련 정보를 찾을 수 없습니다."라고 한 경우
+        # 아직 fallback 검색을 하지 않은 상태라면 전체 생활관 검색으로 한 번 더 시도
         if (
             answer_result.answer.strip() == settings.chat_no_answer_message
             and retrieval_method != settings.chat_retrieval_method_fallback
@@ -237,10 +227,10 @@ def _answer_single_dormitory_chat(
                 retrieval_version = settings.chat_retrieval_version_fallback
 
                 answer_result = generate_answer(
-                    question, 
+                    question,
                     chunks,
                     dormitory=dormitory,
-                    is_fallback=retrieval_method == settings.chat_retrieval_method_fallback,
+                    is_fallback=True,
                 )
 
     except Exception as exc:
@@ -250,7 +240,27 @@ def _answer_single_dormitory_chat(
             occurred_step=STEP_ANSWER_GENERATION,
         )
         raise
+
+    # 최종적으로 사용된 chunks만 chat_retrieval_result에 저장
+    # fallback이 발생했다면 fallback chunks가 저장됨
+    try:
+        create_chat_retrieval_results(
+            db,
+            chat_log_id=chat_log_id,
+            retrieval_items=chunks,
+            retrieval_method=retrieval_method,
+        )
+    except Exception as exc:
+        _attach_chat_error_metadata(
+            exc,
+            error_type=ERROR_TYPE_RETRIEVAL,
+            occurred_step=STEP_RETRIEVAL,
+        )
+        raise
+
+    db.commit()
     db.close()
+
     return _finalize_chat_log_in_new_session(
         chat_log_id=chat_log_id,
         session_id=session_id,
@@ -265,7 +275,6 @@ def _answer_single_dormitory_chat(
         mark_retrieval_used=True,
         cited_regulation_chunk_ids=answer_result.cited_regulation_chunk_ids,
     )
-
 
 def _answer_unspecified_dormitory_chat(
     db: Session,

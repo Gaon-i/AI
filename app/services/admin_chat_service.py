@@ -81,6 +81,9 @@ def get_admin_chat_sessions_by_date(
     offset = (page - 1) * size
     total_count = count_chat_sessions_by_started_date(db, target_date)
     sessions = list_chat_sessions_by_started_date(db, target_date, offset=offset, limit=size)
+    settings = get_settings()
+    expiration_threshold = get_current_utc_time() - timedelta(minutes=settings.chat_session_timeout_minutes)
+
     return AdminChatSessionsByDateResult(
         date=target_date,
         page=page,
@@ -95,14 +98,12 @@ def get_admin_chat_sessions_by_date(
                 ended_at=session.ended_at,
                 last_activity_at=session.last_activity_at,
                 created_at=session.created_at,
-                is_expired=_is_chat_session_expired(session.last_activity_at),
+                is_expired=_is_chat_session_expired(session.last_activity_at, expiration_threshold),
             )
             for session in sessions
         ]
     )
 
 
-def _is_chat_session_expired(last_activity_at: datetime) -> bool:
-    settings = get_settings()
-    expiration_threshold = get_current_utc_time() - timedelta(minutes=settings.chat_session_timeout_minutes)
+def _is_chat_session_expired(last_activity_at: datetime, expiration_threshold: datetime) -> bool:
     return last_activity_at < expiration_threshold

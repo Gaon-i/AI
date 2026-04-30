@@ -2,8 +2,7 @@ from datetime import datetime
 from typing import Literal
 from typing import Optional
 
-from pydantic import BaseModel
-from pydantic import Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ChatRequest(BaseModel):

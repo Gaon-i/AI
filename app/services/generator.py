@@ -16,7 +16,12 @@ class AnswerGenerationResult:
     cited_regulation_chunk_ids: list[int]
 
 
-def generate_answer(question: str, chunks: list[dict]) -> AnswerGenerationResult:
+def generate_answer(
+        question: str, 
+        chunks: list[dict],
+        dormitory: Optional[str] = None,
+        is_fallback: bool = False,
+    ) -> AnswerGenerationResult:
     """
     검색된 chunk들을 기반으로 최종 답변 생성
     """
@@ -36,6 +41,19 @@ def generate_answer(question: str, chunks: list[dict]) -> AnswerGenerationResult
         ]
     )
 
+
+    fallback_instruction = ""
+    if is_fallback and dormitory:
+        fallback_instruction = f"""
+    사용자는 {dormitory} 기준으로 질문했다.
+    현재 참고 정보에는 {dormitory}가 아닌 다른 생활관 정보가 포함될 수 있다.
+    {dormitory}에 대한 직접 정보가 참고 정보에 없고, 다른 생활관 정보만 있다면
+    "{dormitory}에 대한 직접 정보는 확인되지 않지만, 다른 생활관 기준으로는 ..." 형식으로 답변해라.
+    다른 생활관 정보가 질문에 도움이 된다면 관련 정보를 찾을 수 없다고만 답하지 말고, 생활관을 구분해서 안내해라.
+    """
+
+
+
     prompt = f"""
 너는 기숙사 안내 챗봇이다.
 아래 제공된 정보를 기반으로만 질문에 답변해라.
@@ -43,6 +61,7 @@ def generate_answer(question: str, chunks: list[dict]) -> AnswerGenerationResult
 질문에서 생활관을 특정하지 않았고 참고 정보가 특정 생활관에만 해당하면, 해당 생활관 기준 답변임을 명확히 밝혀라.
 질문에서 생활관을 특정하지 않았더라도 생활관별 구분을 강제로 만들지 말고, 가장 관련 있는 정보 중심으로 간결하게 답변해라.
 참고 정보에 생활관 구분이 없거나 공통 규정으로 보이면 일반 답변으로 안내해라.
+{fallback_instruction}
 답변에는 `[C1]`, `[C2]` 같은 내부 근거 라벨을 절대 출력하지 마라.
 출처 문구는 서버가 별도로 붙이므로 답변 본문에는 출처 줄을 만들지 마라.
 질문에 답할 정보가 충분하지 않으면 정확히 "{settings.chat_no_answer_message}"라고만 답해라.

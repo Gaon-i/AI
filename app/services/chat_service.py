@@ -30,6 +30,9 @@ from app.services.embeddings import create_query_embedding
 from app.services.generator import generate_answer
 from app.services.validator import validate_question
 
+
+from app.repositories.regulation_chunk_repository import search_similar_chunks_all_dormitories
+
 ERROR_TYPE_TIMEOUT = "TIMEOUT"
 ERROR_TYPE_LLM_API = "LLM_API_ERROR"
 ERROR_TYPE_RETRIEVAL = "RETRIEVAL_ERROR"
@@ -150,14 +153,30 @@ def _answer_single_dormitory_chat(
     started_at: float,
 ) -> ChatResponse:
     settings = get_settings()
+
+    retrieval_method = settings.chat_retrieval_method_single
+    retrieval_version = settings.chat_retrieval_version_single
+
     try:
         query_embedding = create_query_embedding(question)
+
         chunks = search_similar_chunks(
             db=db,
             query_embedding=query_embedding,
             dormitory=dormitory,
             top_k=settings.chat_single_dormitory_top_k,
         )
+
+
+        if _should_fallback_retrieval(chunks):
+            chunks = search_similar_chunks_all_dormitories(
+                db=db,
+                query_embedding=query_embedding,
+                top_k=settings.chat_fallback_top_k,
+            )
+            retrieval_method = settings.chat_retrieval_method_fallback
+            retrieval_version = settings.chat_retrieval_version_fallback
+
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,
@@ -177,7 +196,7 @@ def _answer_single_dormitory_chat(
             rewritten_query=question,
             model_name=None,
             prompt_version=None,
-            retrieval_version=settings.chat_retrieval_version_single,
+            retrieval_version=retrieval_version,
             response_time_ms=_elapsed_ms(started_at),
         )
 
@@ -186,7 +205,7 @@ def _answer_single_dormitory_chat(
             db,
             chat_log_id=chat_log_id,
             retrieval_items=chunks,
-            retrieval_method=settings.chat_retrieval_method_single,
+            retrieval_method=retrieval_method,
         )
     except Exception as exc:
         _attach_chat_error_metadata(
@@ -197,7 +216,33 @@ def _answer_single_dormitory_chat(
         raise
     db.commit()
     try:
-        answer_result = generate_answer(question, chunks)
+        answer_result = generate_answer(question, 
+                                        chunks,
+                                        dormitory=dormitory,
+                                        is_fallback=retrieval_method == settings.chat_retrieval_method_fallback,)
+
+        if (
+            answer_result.answer.strip() == settings.chat_no_answer_message
+            and retrieval_method != settings.chat_retrieval_method_fallback
+        ):
+            fallback_chunks = search_similar_chunks_all_dormitories(
+                db=db,
+                query_embedding=query_embedding,
+                top_k=settings.chat_fallback_top_k,
+            )
+
+            if fallback_chunks:
+                chunks = fallback_chunks
+                retrieval_method = settings.chat_retrieval_method_fallback
+                retrieval_version = settings.chat_retrieval_version_fallback
+
+                answer_result = generate_answer(
+                    question, 
+                    chunks,
+                    dormitory=dormitory,
+                    is_fallback=retrieval_method == settings.chat_retrieval_method_fallback,
+                )
+
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,
@@ -215,7 +260,7 @@ def _answer_single_dormitory_chat(
         rewritten_query=question,
         model_name=settings.chat_answer_model,
         prompt_version=settings.chat_prompt_version_single,
-        retrieval_version=settings.chat_retrieval_version_single,
+        retrieval_version=retrieval_version,
         response_time_ms=_elapsed_ms(started_at),
         mark_retrieval_used=True,
         cited_regulation_chunk_ids=answer_result.cited_regulation_chunk_ids,
@@ -465,3 +510,16 @@ def _build_chat_error_metadata(exc: Exception) -> ChatErrorMetadata:
         error_message=error_message,
         error_detail=error_detail,
     )
+
+
+def _should_fallback_retrieval(chunks: list[dict]) -> bool:
+    settings = get_settings()
+
+    if not chunks:
+        return True
+
+    top_similarity = chunks[0].get("similarity")
+    if top_similarity is None:
+        return True
+
+    return float(top_similarity) < settings.chat_fallback_similarity_threshold

@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     regulation_chunk_max_length: int = 400
     chat_session_timeout_minutes: int = 30
 
+    chat_fallback_top_k: int = 5
+    chat_retrieval_method_fallback: str = "vector_all_dormitories_fallback"
+    chat_retrieval_version_fallback: str = "dormitory-search-fallback-v1"
+
+    chat_fallback_similarity_threshold: float = 0.35
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -44,3 +50,4 @@ def get_settings() -> Settings:
 
 
 Settings.model_config = SettingsConfigDict(extra="ignore")
+

@@ -1,6 +1,11 @@
+from datetime import date
+from datetime import datetime
+from datetime import time
+from datetime import timedelta
 from typing import Optional
 
 from sqlalchemy import desc
+from sqlalchemy import func
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,10 +20,32 @@ def get_chat_log_by_id(db: Session, chat_log_id: int) -> Optional[ChatLog]:
     return db.execute(statement).scalar_one_or_none()
 
 
-def list_recent_chat_sessions(db: Session, limit: int = 10) -> list[ChatSession]:
+def count_chat_sessions_by_started_date(db: Session, target_date: date) -> int:
+    start_at = datetime.combine(target_date, time.min)
+    end_at = start_at + timedelta(days=1)
+    statement = (
+        select(func.count())
+        .select_from(ChatSession)
+        .where(ChatSession.started_at >= start_at)
+        .where(ChatSession.started_at < end_at)
+    )
+    return int(db.execute(statement).scalar_one())
+
+
+def list_chat_sessions_by_started_date(
+    db: Session,
+    target_date: date,
+    offset: int,
+    limit: int,
+) -> list[ChatSession]:
+    start_at = datetime.combine(target_date, time.min)
+    end_at = start_at + timedelta(days=1)
     statement = (
         select(ChatSession)
+        .where(ChatSession.started_at >= start_at)
+        .where(ChatSession.started_at < end_at)
         .order_by(desc(ChatSession.last_activity_at), desc(ChatSession.started_at))
+        .offset(offset)
         .limit(limit)
     )
     return list(db.execute(statement).scalars().all())

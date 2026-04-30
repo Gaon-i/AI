@@ -6,7 +6,7 @@ from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
 from app.schemas.admin_chat import AdminChatLogDetail
 from app.schemas.admin_chat import AdminChatSessionSummary
-from app.schemas.admin_chat import AdminRecentChatSessionsResult
+from app.schemas.admin_chat import AdminChatSessionsByDateResult
 
 
 def test_get_admin_chat_log_api_returns_chat_log_detail(
@@ -137,14 +137,18 @@ def test_get_admin_chat_log_api_returns_not_found_error(
     }
 
 
-def test_get_recent_admin_chat_sessions_api_returns_latest_10(
+def test_get_admin_chat_sessions_by_date_api_returns_paginated_sessions(
     client: TestClient,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
         admin_chat_module,
-        "get_recent_admin_chat_sessions",
-        lambda *_args, **_kwargs: AdminRecentChatSessionsResult(
+        "get_admin_chat_sessions_by_date",
+        lambda *_args, **_kwargs: AdminChatSessionsByDateResult(
+            date="2026-04-27",
+            page=1,
+            size=20,
+            total_count=2,
             items=[
                 AdminChatSessionSummary(
                     session_id="session-123",
@@ -153,11 +157,6 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     started_at="2026-04-27T09:30:00",
                     ended_at=None,
                     last_activity_at="2026-04-27T10:00:00",
-                    entry_point="WEB",
-                    is_returning_user=True,
-                    utm_source="newsletter",
-                    utm_medium="email",
-                    utm_campaign="spring",
                     created_at="2026-04-27T09:30:00",
                     is_expired=False,
                 ),
@@ -168,11 +167,6 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     started_at="2026-04-27T09:00:00",
                     ended_at=None,
                     last_activity_at="2026-04-27T09:10:00",
-                    entry_point=None,
-                    is_returning_user=False,
-                    utm_source=None,
-                    utm_medium=None,
-                    utm_campaign=None,
                     created_at="2026-04-27T09:00:00",
                     is_expired=True,
                 ),
@@ -181,15 +175,19 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
     )
 
     response = client.get(
-        "/api/v1/admin/chat/sessions/recent",
+        "/api/v1/admin/chat/sessions?date=2026-04-27&page=1&size=20",
         headers={"X-Admin-Token": "test-admin-token"},
     )
 
     assert response.status_code == 200
     assert response.json() == {
         "status": 200,
-        "message": "recent chat sessions retrieved",
+        "message": "chat sessions retrieved",
         "data": {
+            "date": "2026-04-27",
+            "page": 1,
+            "size": 20,
+            "total_count": 2,
             "items": [
                 {
                     "session_id": "session-123",
@@ -198,11 +196,6 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     "started_at": "2026-04-27T09:30:00",
                     "ended_at": None,
                     "last_activity_at": "2026-04-27T10:00:00",
-                    "entry_point": "WEB",
-                    "is_returning_user": True,
-                    "utm_source": "newsletter",
-                    "utm_medium": "email",
-                    "utm_campaign": "spring",
                     "created_at": "2026-04-27T09:30:00",
                     "is_expired": False,
                 },
@@ -213,11 +206,6 @@ def test_get_recent_admin_chat_sessions_api_returns_latest_10(
                     "started_at": "2026-04-27T09:00:00",
                     "ended_at": None,
                     "last_activity_at": "2026-04-27T09:10:00",
-                    "entry_point": None,
-                    "is_returning_user": False,
-                    "utm_source": None,
-                    "utm_medium": None,
-                    "utm_campaign": None,
                     "created_at": "2026-04-27T09:00:00",
                     "is_expired": True,
                 },

@@ -90,7 +90,7 @@ def test_get_admin_chat_log_detail_raises_not_found(monkeypatch: pytest.MonkeyPa
     assert exc_info.value.error_code.code == "CHAT_LOG_NOT_FOUND"
 
 
-def test_get_recent_admin_chat_sessions_returns_up_to_10(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_admin_chat_sessions_by_date_returns_paginated_sessions(monkeypatch: pytest.MonkeyPatch) -> None:
     sessions = [
         type(
             "ChatSessionStub",
@@ -102,11 +102,6 @@ def test_get_recent_admin_chat_sessions_returns_up_to_10(monkeypatch: pytest.Mon
                 "started_at": datetime(2026, 4, 27, 9, 30, 0),
                 "ended_at": None,
                 "last_activity_at": datetime(2026, 4, 27, 10, 0, 0),
-                "entry_point": "WEB",
-                "is_returning_user": True,
-                "utm_source": "newsletter",
-                "utm_medium": "email",
-                "utm_campaign": "spring",
                 "created_at": datetime(2026, 4, 27, 9, 30, 0),
             },
         )(),
@@ -120,21 +115,32 @@ def test_get_recent_admin_chat_sessions_returns_up_to_10(monkeypatch: pytest.Mon
                 "started_at": datetime(2026, 4, 27, 9, 0, 0),
                 "ended_at": None,
                 "last_activity_at": datetime(2026, 4, 27, 9, 10, 0),
-                "entry_point": None,
-                "is_returning_user": False,
-                "utm_source": None,
-                "utm_medium": None,
-                "utm_campaign": None,
                 "created_at": datetime(2026, 4, 27, 9, 0, 0),
             },
         )(),
     ]
-    monkeypatch.setattr(admin_chat_service, "list_recent_chat_sessions", lambda *_args, **_kwargs: sessions)
+    list_calls: dict[str, object] = {}
+    monkeypatch.setattr(admin_chat_service, "count_chat_sessions_by_started_date", lambda *_args, **_kwargs: 12)
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_sessions_by_started_date",
+        lambda *_args, **kwargs: list_calls.update(kwargs) or sessions,
+    )
     monkeypatch.setattr(admin_chat_service, "get_settings", lambda: type("SettingsStub", (), {"chat_session_timeout_minutes": 30})())
     monkeypatch.setattr(admin_chat_service, "get_current_utc_time", lambda: datetime(2026, 4, 27, 10, 0, 1))
 
-    result = admin_chat_service.get_recent_admin_chat_sessions(object())
+    result = admin_chat_service.get_admin_chat_sessions_by_date(
+        object(),
+        target_date=datetime(2026, 4, 27).date(),
+        page=2,
+        size=10,
+    )
 
+    assert result.date == datetime(2026, 4, 27).date()
+    assert result.page == 2
+    assert result.size == 10
+    assert result.total_count == 12
+    assert list_calls == {"offset": 10, "limit": 10}
     assert len(result.items) == 2
     assert result.items[0].session_id == "session-123"
     assert result.items[1].session_id == "session-456"

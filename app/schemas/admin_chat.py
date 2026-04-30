@@ -8,6 +8,16 @@ from pydantic import Field
 
 
 AdminChatReviewQueueReason = Literal["ERROR", "NO_ANSWER", "NEGATIVE_FEEDBACK"]
+AdminChatCorrectnessLabel = Literal["CORRECT", "PARTIAL", "INCORRECT"]
+AdminChatCitationLabel = Literal["APPROPRIATE", "WEAK", "WRONG", "NONE"]
+AdminChatRootCause = Literal[
+    "RETRIEVAL_FAIL",
+    "DOC_OUTDATED",
+    "NO_RELEVANT_DOC",
+    "PROMPT_OVERGENERATION",
+    "QUESTION_AMBIGUOUS",
+    "MODEL_HALLUCINATION",
+]
 
 
 class AdminChatLogDetail(BaseModel):
@@ -76,6 +86,16 @@ class AdminChatAdminReview(BaseModel):
     corrected_answer: Optional[str] = None
     review_note: Optional[str] = None
     created_at: datetime
+
+
+class AdminChatReviewSaveRequest(BaseModel):
+    admin_id: int = Field(ge=1)
+    correctness_label: AdminChatCorrectnessLabel
+    citation_label: Optional[AdminChatCitationLabel] = None
+    root_cause: Optional[AdminChatRootCause] = None
+    correction_required: bool = False
+    corrected_answer: Optional[str] = Field(default=None, max_length=5000)
+    review_note: Optional[str] = Field(default=None, max_length=2000)
 
 
 class AdminChatSessionSummary(BaseModel):

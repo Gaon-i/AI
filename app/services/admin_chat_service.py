@@ -18,12 +18,14 @@ from app.repositories.admin_chat_repository import list_chat_admin_reviews_by_ch
 from app.repositories.admin_chat_repository import list_chat_retrieval_results_by_chat_log_id
 from app.repositories.admin_chat_repository import list_chat_review_queue_items
 from app.repositories.admin_chat_repository import list_chat_sessions_by_started_date
+from app.repositories.admin_chat_repository import save_chat_admin_review
 from app.schemas.admin_chat import AdminChatReviewQueueReason
 from app.schemas.admin_chat import AdminChatReviewQueueResult
 from app.schemas.admin_chat import AdminChatReviewQueueItem
 from app.schemas.admin_chat import AdminChatErrorLog
 from app.schemas.admin_chat import AdminChatFeedback
 from app.schemas.admin_chat import AdminChatAdminReview
+from app.schemas.admin_chat import AdminChatReviewSaveRequest
 from app.schemas.admin_chat import AdminChatSessionsByDateResult
 from app.schemas.admin_chat import AdminChatLogDetail
 from app.schemas.admin_chat import AdminChatRetrievalResult
@@ -181,6 +183,32 @@ def get_admin_chat_review_queue(
     )
 
 
+def save_admin_chat_review(
+    db: Session,
+    *,
+    chat_log_id: int,
+    request: AdminChatReviewSaveRequest,
+) -> AdminChatAdminReview:
+    chat_log = get_chat_log_by_id(db, chat_log_id)
+    if chat_log is None:
+        raise AppException(CHAT_LOG_NOT_FOUND)
+
+    admin_review = save_chat_admin_review(
+        db,
+        chat_log_id=chat_log_id,
+        reviewer_id=request.admin_id,
+        correctness_label=request.correctness_label,
+        citation_label=request.citation_label,
+        root_cause=request.root_cause,
+        correction_required=request.correction_required,
+        corrected_answer=request.corrected_answer,
+        review_note=request.review_note,
+    )
+    db.commit()
+    db.refresh(admin_review)
+    return _build_admin_review_schema(admin_review)
+
+
 def _is_chat_session_expired(last_activity_at: datetime, expiration_threshold: datetime) -> bool:
     return last_activity_at < expiration_threshold
 
@@ -211,3 +239,16 @@ def _resolve_review_reason(answer_status) -> AdminChatReviewQueueReason:
 def _get_answer_status_value(answer_status) -> str:
     return getattr(answer_status, "value", answer_status)
 
+
+def _build_admin_review_schema(item) -> AdminChatAdminReview:
+    return AdminChatAdminReview(
+        review_id=item.review_id,
+        admin_id=item.reviewer_id,
+        correctness_label=item.correctness_label,
+        citation_label=item.citation_label,
+        root_cause=item.root_cause,
+        correction_required=item.correction_required,
+        corrected_answer=item.corrected_answer,
+        review_note=item.review_note,
+        created_at=item.created_at,
+    )

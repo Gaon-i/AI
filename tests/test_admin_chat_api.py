@@ -4,6 +4,7 @@ from datetime import datetime
 from app.api import admin_chat as admin_chat_module
 from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
+from app.schemas.admin_chat import AdminChatAdminReview
 from app.schemas.admin_chat import AdminChatLogDetail
 from app.schemas.admin_chat import AdminChatReviewQueueItem
 from app.schemas.admin_chat import AdminChatReviewQueueResult
@@ -189,6 +190,87 @@ def test_get_admin_chat_log_api_returns_not_found_error(
         "data": None,
         "error_code": "CHAT_LOG_NOT_FOUND",
     }
+
+
+def test_save_admin_chat_review_api_returns_saved_review(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    calls = {}
+
+    def fake_save_admin_chat_review(_db, **kwargs):
+        calls.update(kwargs)
+        return AdminChatAdminReview(
+            review_id=51,
+            admin_id=1,
+            correctness_label="INCORRECT",
+            citation_label="WRONG",
+            root_cause="RETRIEVAL_FAIL",
+            correction_required=True,
+            corrected_answer="택배는 각 생활관 행정실에서 수령할 수 있습니다.",
+            review_note="택배 질문에 외박 문서가 검색됨",
+            created_at="2026-04-30T10:30:00",
+        )
+
+    monkeypatch.setattr(admin_chat_module, "save_admin_chat_review", fake_save_admin_chat_review)
+
+    response = client.put(
+        "/api/v1/admin/chat/logs/101/review",
+        headers={"X-Admin-Token": "test-admin-token"},
+        json={
+            "admin_id": 1,
+            "correctness_label": "INCORRECT",
+            "citation_label": "WRONG",
+            "root_cause": "RETRIEVAL_FAIL",
+            "correction_required": True,
+            "corrected_answer": "택배는 각 생활관 행정실에서 수령할 수 있습니다.",
+            "review_note": "택배 질문에 외박 문서가 검색됨",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls["chat_log_id"] == 101
+    assert calls["request"].admin_id == 1
+    assert calls["request"].correctness_label == "INCORRECT"
+    assert response.json() == {
+        "status": 200,
+        "message": "chat admin review saved",
+        "data": {
+            "review_id": 51,
+            "admin_id": 1,
+            "correctness_label": "INCORRECT",
+            "citation_label": "WRONG",
+            "root_cause": "RETRIEVAL_FAIL",
+            "correction_required": True,
+            "corrected_answer": "택배는 각 생활관 행정실에서 수령할 수 있습니다.",
+            "review_note": "택배 질문에 외박 문서가 검색됨",
+            "created_at": "2026-04-30T10:30:00",
+        },
+        "error_code": None,
+    }
+
+
+def test_save_admin_chat_review_api_returns_not_found_error(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        admin_chat_module,
+        "save_admin_chat_review",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AppException(CHAT_LOG_NOT_FOUND)),
+    )
+
+    response = client.put(
+        "/api/v1/admin/chat/logs/999/review",
+        headers={"X-Admin-Token": "test-admin-token"},
+        json={
+            "admin_id": 1,
+            "correctness_label": "INCORRECT",
+        },
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error_code"] == "CHAT_LOG_NOT_FOUND"
 
 
 def test_get_admin_chat_review_queue_api_returns_paginated_queue(

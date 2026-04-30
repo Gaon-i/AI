@@ -107,6 +107,50 @@ def list_chat_admin_reviews_by_chat_log_id(
     return list(db.execute(statement).scalars().all())
 
 
+def get_latest_chat_admin_review_by_chat_log_id(
+    db: Session,
+    chat_log_id: int,
+) -> Optional[ChatAdminReview]:
+    statement = (
+        select(ChatAdminReview)
+        .where(ChatAdminReview.chat_log_id == chat_log_id)
+        .order_by(ChatAdminReview.created_at.desc(), ChatAdminReview.review_id.desc())
+        .limit(1)
+    )
+    return db.execute(statement).scalar_one_or_none()
+
+
+def save_chat_admin_review(
+    db: Session,
+    *,
+    chat_log_id: int,
+    reviewer_id: int,
+    correctness_label: str,
+    citation_label: Optional[str],
+    root_cause: Optional[str],
+    correction_required: bool,
+    corrected_answer: Optional[str],
+    review_note: Optional[str],
+) -> ChatAdminReview:
+    admin_review = get_latest_chat_admin_review_by_chat_log_id(db, chat_log_id)
+    if admin_review is None:
+        admin_review = ChatAdminReview(
+            chat_log_id=chat_log_id,
+            reviewer_id=reviewer_id,
+        )
+        db.add(admin_review)
+
+    admin_review.reviewer_id = reviewer_id
+    admin_review.correctness_label = correctness_label
+    admin_review.citation_label = citation_label
+    admin_review.root_cause = root_cause
+    admin_review.correction_required = correction_required
+    admin_review.corrected_answer = corrected_answer
+    admin_review.review_note = review_note
+    db.flush()
+    return admin_review
+
+
 def count_chat_review_queue_items(db: Session, reason: Optional[str] = None) -> int:
     statement = select(func.count(ChatLog.chat_log_id)).where(*_build_chat_review_queue_conditions(reason))
     return int(db.execute(statement).scalar_one())

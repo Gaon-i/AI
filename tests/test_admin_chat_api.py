@@ -5,6 +5,8 @@ from app.api import admin_chat as admin_chat_module
 from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
 from app.schemas.admin_chat import AdminChatLogDetail
+from app.schemas.admin_chat import AdminChatReviewQueueItem
+from app.schemas.admin_chat import AdminChatReviewQueueResult
 from app.schemas.admin_chat import AdminChatSessionSummary
 from app.schemas.admin_chat import AdminChatSessionsByDateResult
 
@@ -135,6 +137,99 @@ def test_get_admin_chat_log_api_returns_not_found_error(
         "data": None,
         "error_code": "CHAT_LOG_NOT_FOUND",
     }
+
+
+def test_get_admin_chat_review_queue_api_returns_paginated_queue(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    calls = {}
+
+    def fake_get_admin_chat_review_queue(_db, **kwargs):
+        calls.update(kwargs)
+        return AdminChatReviewQueueResult(
+            page=1,
+            size=20,
+            total_count=1,
+            total_pages=1,
+            items=[
+                AdminChatReviewQueueItem(
+                    chat_log_id=101,
+                    session_id="session-123",
+                    user_id=7,
+                    question="택배 어디서 받아?",
+                    answer_preview="외박 신청은 생활관 홈페이지에서...",
+                    answer_status="SUCCESS",
+                    review_reason="NEGATIVE_FEEDBACK",
+                    negative_feedback_count=1,
+                    latest_feedback_reason_code="INCORRECT_ANSWER",
+                    created_at="2026-04-30T10:00:00",
+                )
+            ],
+        )
+
+    monkeypatch.setattr(admin_chat_module, "get_admin_chat_review_queue", fake_get_admin_chat_review_queue)
+
+    response = client.get(
+        "/api/v1/admin/chat/review-queue?page=1&size=20&reason=NEGATIVE_FEEDBACK",
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+
+    assert response.status_code == 200
+    assert calls == {"page": 1, "size": 20, "reason": "NEGATIVE_FEEDBACK"}
+    assert response.json() == {
+        "status": 200,
+        "message": "chat review queue retrieved",
+        "data": {
+            "page": 1,
+            "size": 20,
+            "total_count": 1,
+            "total_pages": 1,
+            "items": [
+                {
+                    "chat_log_id": 101,
+                    "session_id": "session-123",
+                    "user_id": 7,
+                    "question": "택배 어디서 받아?",
+                    "answer_preview": "외박 신청은 생활관 홈페이지에서...",
+                    "answer_status": "SUCCESS",
+                    "review_reason": "NEGATIVE_FEEDBACK",
+                    "negative_feedback_count": 1,
+                    "latest_feedback_reason_code": "INCORRECT_ANSWER",
+                    "created_at": "2026-04-30T10:00:00",
+                }
+            ],
+        },
+        "error_code": None,
+    }
+
+
+def test_get_admin_chat_review_queue_api_accepts_missing_reason(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    calls = {}
+
+    def fake_get_admin_chat_review_queue(_db, **kwargs):
+        calls.update(kwargs)
+        return AdminChatReviewQueueResult(
+            page=1,
+            size=20,
+            total_count=0,
+            total_pages=0,
+            items=[],
+        )
+
+    monkeypatch.setattr(admin_chat_module, "get_admin_chat_review_queue", fake_get_admin_chat_review_queue)
+
+    response = client.get(
+        "/api/v1/admin/chat/review-queue",
+        headers={"X-Admin-Token": "test-admin-token"},
+    )
+
+    assert response.status_code == 200
+    assert calls == {"page": 1, "size": 20, "reason": None}
+    assert response.json()["data"]["items"] == []
 
 
 def test_get_admin_chat_sessions_by_date_api_returns_paginated_sessions(

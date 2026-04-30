@@ -1,6 +1,7 @@
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
+from typing import Optional
 
 from sqlalchemy.orm import Session
 
@@ -9,15 +10,22 @@ from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
 from app.core.time_utils import get_current_utc_time
 from app.repositories.admin_chat_repository import get_chat_log_by_id
+from app.repositories.admin_chat_repository import count_chat_review_queue_items
 from app.repositories.admin_chat_repository import count_chat_sessions_by_started_date
 from app.repositories.admin_chat_repository import list_chat_error_logs_by_chat_log_id
 from app.repositories.admin_chat_repository import list_chat_retrieval_results_by_chat_log_id
+from app.repositories.admin_chat_repository import list_chat_review_queue_items
 from app.repositories.admin_chat_repository import list_chat_sessions_by_started_date
+from app.schemas.admin_chat import AdminChatReviewQueueReason
+from app.schemas.admin_chat import AdminChatReviewQueueResult
+from app.schemas.admin_chat import AdminChatReviewQueueItem
 from app.schemas.admin_chat import AdminChatErrorLog
 from app.schemas.admin_chat import AdminChatSessionsByDateResult
 from app.schemas.admin_chat import AdminChatLogDetail
 from app.schemas.admin_chat import AdminChatRetrievalResult
 from app.schemas.admin_chat import AdminChatSessionSummary
+
+ANSWER_PREVIEW_MAX_LENGTH = 160
 
 
 def get_admin_chat_log_detail(db: Session, chat_log_id: int) -> AdminChatLogDetail:
@@ -105,5 +113,66 @@ def get_admin_chat_sessions_by_date(
     )
 
 
+def get_admin_chat_review_queue(
+    db: Session,
+    *,
+    page: int,
+    size: int,
+    reason: Optional[AdminChatReviewQueueReason] = None,
+) -> AdminChatReviewQueueResult:
+    offset = (page - 1) * size
+    total_count = count_chat_review_queue_items(db, reason)
+    rows = list_chat_review_queue_items(db, reason=reason, offset=offset, limit=size)
+
+    return AdminChatReviewQueueResult(
+        page=page,
+        size=size,
+        total_count=total_count,
+        total_pages=_calculate_total_pages(total_count, size),
+        items=[
+            AdminChatReviewQueueItem(
+                chat_log_id=row["chat_log"].chat_log_id,
+                session_id=row["chat_log"].session_id,
+                user_id=row["chat_log"].user_id,
+                question=row["chat_log"].question,
+                answer_preview=_build_answer_preview(row["chat_log"].answer),
+                answer_status=_get_answer_status_value(row["chat_log"].answer_status),
+                review_reason=_resolve_review_reason(row["chat_log"].answer_status),
+                negative_feedback_count=row["negative_feedback_count"],
+                latest_feedback_reason_code=row["latest_feedback_reason_code"],
+                created_at=row["chat_log"].created_at,
+            )
+            for row in rows
+        ],
+    )
+
+
 def _is_chat_session_expired(last_activity_at: datetime, expiration_threshold: datetime) -> bool:
     return last_activity_at < expiration_threshold
+
+
+def _calculate_total_pages(total_count: int, size: int) -> int:
+    if total_count == 0:
+        return 0
+    return (total_count + size - 1) // size
+
+
+def _build_answer_preview(answer: Optional[str]) -> Optional[str]:
+    if answer is None:
+        return None
+    if len(answer) <= ANSWER_PREVIEW_MAX_LENGTH:
+        return answer
+    return answer[:ANSWER_PREVIEW_MAX_LENGTH]
+
+
+def _resolve_review_reason(answer_status) -> AdminChatReviewQueueReason:
+    status_value = _get_answer_status_value(answer_status)
+    if status_value == "ERROR":
+        return "ERROR"
+    if status_value == "NO_ANSWER":
+        return "NO_ANSWER"
+    return "NEGATIVE_FEEDBACK"
+
+
+def _get_answer_status_value(answer_status) -> str:
+    return getattr(answer_status, "value", answer_status)

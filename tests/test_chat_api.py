@@ -1,3 +1,4 @@
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api import chat as chat_module
@@ -143,3 +144,27 @@ def test_chat_feedback_api_accepts_optional_reason_fields(
     assert response.status_code == 200
     assert response.json()["reason_code"] is None
     assert response.json()["feedback_comment"] is None
+
+
+def test_chat_feedback_api_rejects_positive_feedback_reason_fields(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        chat_module,
+        "create_feedback",
+        lambda *_args, **_kwargs: pytest.fail("invalid feedback should not call service"),
+    )
+
+    response = client.post(
+        "/api/v1/ai/chat/feedback",
+        json={
+            "chat_log_id": 101,
+            "is_helpful": True,
+            "reason_code": "OTHER",
+            "feedback_comment": "좋았지만 의견을 남깁니다.",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error_code"] == "VALIDATION_ERROR"

@@ -48,6 +48,12 @@ class ChatFeedbackCreateRequest(BaseModel):
     )
     feedback_comment: Optional[str] = Field(default=None, max_length=2000)
 
+    @model_validator(mode="after")
+    def validate_negative_feedback_fields(self) -> "ChatFeedbackCreateRequest":
+        if self.is_helpful and (self.reason_code is not None or self.feedback_comment is not None):
+            raise ValueError("reason_code and feedback_comment should only be provided for negative feedback.")
+        return self
+
 
 class ChatFeedbackCreateResponse(BaseModel):
     feedback_id: int

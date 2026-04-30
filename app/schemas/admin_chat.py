@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import datetime
 from typing import Optional
 
@@ -54,14 +55,13 @@ class AdminChatSessionSummary(BaseModel):
     started_at: datetime
     ended_at: Optional[datetime] = None
     last_activity_at: datetime
-    entry_point: Optional[str] = None
-    is_returning_user: bool
-    utm_source: Optional[str] = None
-    utm_medium: Optional[str] = None
-    utm_campaign: Optional[str] = None
     created_at: datetime
     is_expired: bool
 
 
-class AdminRecentChatSessionsResult(BaseModel):
+class AdminChatSessionsByDateResult(BaseModel):
+    date: date
+    page: int
+    size: int
+    total_count: int
     items: list[AdminChatSessionSummary]

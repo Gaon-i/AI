@@ -1,16 +1,19 @@
+from datetime import date
+
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import Path
+from fastapi import Query
 from fastapi import status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies.admin_auth import require_admin_token
 from app.db.session import get_db
 from app.schemas.admin_chat import AdminChatLogDetail
-from app.schemas.admin_chat import AdminRecentChatSessionsResult
+from app.schemas.admin_chat import AdminChatSessionsByDateResult
 from app.schemas.common import ApiResponse
+from app.services.admin_chat_service import get_admin_chat_sessions_by_date
 from app.services.admin_chat_service import get_admin_chat_log_detail
-from app.services.admin_chat_service import get_recent_admin_chat_sessions
 
 router = APIRouter(
     prefix="/admin/chat",
@@ -39,18 +42,21 @@ def get_admin_chat_log_api(
 
 
 @router.get(
-    "/sessions/recent",
-    response_model=ApiResponse[AdminRecentChatSessionsResult],
+    "/sessions",
+    response_model=ApiResponse[AdminChatSessionsByDateResult],
     status_code=status.HTTP_200_OK,
-    summary="최신 채팅 세션 10건 조회",
-    description="관리자가 `chat_session` 테이블에서 최근 활동 기준 최신 10개 세션을 조회합니다.",
+    summary="날짜별 채팅 세션 조회",
+    description="관리자가 `started_at` 기준 특정 날짜의 채팅 세션을 페이지 단위로 조회합니다.",
 )
-def get_recent_admin_chat_sessions_api(
+def get_admin_chat_sessions_by_date_api(
+    target_date: date = Query(alias="date"),
+    page: int = Query(default=1, ge=1),
+    size: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
-) -> ApiResponse[AdminRecentChatSessionsResult]:
-    result = get_recent_admin_chat_sessions(db)
+) -> ApiResponse[AdminChatSessionsByDateResult]:
+    result = get_admin_chat_sessions_by_date(db, target_date=target_date, page=page, size=size)
     return ApiResponse(
         status=status.HTTP_200_OK,
-        message="recent chat sessions retrieved",
+        message="chat sessions retrieved",
         data=result,
     )

@@ -1,3 +1,4 @@
+from datetime import date
 from datetime import datetime
 from datetime import timedelta
 
@@ -8,13 +9,14 @@ from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
 from app.core.time_utils import get_current_utc_time
 from app.repositories.admin_chat_repository import get_chat_log_by_id
+from app.repositories.admin_chat_repository import count_chat_sessions_by_started_date
 from app.repositories.admin_chat_repository import list_chat_error_logs_by_chat_log_id
 from app.repositories.admin_chat_repository import list_chat_retrieval_results_by_chat_log_id
-from app.repositories.admin_chat_repository import list_recent_chat_sessions
+from app.repositories.admin_chat_repository import list_chat_sessions_by_started_date
 from app.schemas.admin_chat import AdminChatErrorLog
+from app.schemas.admin_chat import AdminChatSessionsByDateResult
 from app.schemas.admin_chat import AdminChatLogDetail
 from app.schemas.admin_chat import AdminChatRetrievalResult
-from app.schemas.admin_chat import AdminRecentChatSessionsResult
 from app.schemas.admin_chat import AdminChatSessionSummary
 
 
@@ -70,9 +72,23 @@ def get_admin_chat_log_detail(db: Session, chat_log_id: int) -> AdminChatLogDeta
     )
 
 
-def get_recent_admin_chat_sessions(db: Session) -> AdminRecentChatSessionsResult:
-    sessions = list_recent_chat_sessions(db, limit=10)
-    return AdminRecentChatSessionsResult(
+def get_admin_chat_sessions_by_date(
+    db: Session,
+    target_date: date,
+    page: int,
+    size: int,
+) -> AdminChatSessionsByDateResult:
+    offset = (page - 1) * size
+    total_count = count_chat_sessions_by_started_date(db, target_date)
+    sessions = list_chat_sessions_by_started_date(db, target_date, offset=offset, limit=size)
+    settings = get_settings()
+    expiration_threshold = get_current_utc_time() - timedelta(minutes=settings.chat_session_timeout_minutes)
+
+    return AdminChatSessionsByDateResult(
+        date=target_date,
+        page=page,
+        size=size,
+        total_count=total_count,
         items=[
             AdminChatSessionSummary(
                 session_id=session.session_id,
@@ -81,20 +97,13 @@ def get_recent_admin_chat_sessions(db: Session) -> AdminRecentChatSessionsResult
                 started_at=session.started_at,
                 ended_at=session.ended_at,
                 last_activity_at=session.last_activity_at,
-                entry_point=session.entry_point,
-                is_returning_user=session.is_returning_user,
-                utm_source=session.utm_source,
-                utm_medium=session.utm_medium,
-                utm_campaign=session.utm_campaign,
                 created_at=session.created_at,
-                is_expired=_is_chat_session_expired(session.last_activity_at),
+                is_expired=_is_chat_session_expired(session.last_activity_at, expiration_threshold),
             )
             for session in sessions
         ]
     )
 
 
-def _is_chat_session_expired(last_activity_at: datetime) -> bool:
-    settings = get_settings()
-    expiration_threshold = get_current_utc_time() - timedelta(minutes=settings.chat_session_timeout_minutes)
+def _is_chat_session_expired(last_activity_at: datetime, expiration_threshold: datetime) -> bool:
     return last_activity_at < expiration_threshold

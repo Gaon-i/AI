@@ -10,14 +10,17 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies.admin_auth import require_admin_token
 from app.db.session import get_db
+from app.schemas.admin_chat import AdminChatAdminReview
 from app.schemas.admin_chat import AdminChatLogDetail
 from app.schemas.admin_chat import AdminChatReviewQueueReason
 from app.schemas.admin_chat import AdminChatReviewQueueResult
+from app.schemas.admin_chat import AdminChatReviewSaveRequest
 from app.schemas.admin_chat import AdminChatSessionsByDateResult
 from app.schemas.common import ApiResponse
 from app.services.admin_chat_service import get_admin_chat_review_queue
 from app.services.admin_chat_service import get_admin_chat_sessions_by_date
 from app.services.admin_chat_service import get_admin_chat_log_detail
+from app.services.admin_chat_service import save_admin_chat_review
 
 router = APIRouter(
     prefix="/admin/chat",
@@ -68,6 +71,29 @@ def get_admin_chat_log_api(
     return ApiResponse(
         status=status.HTTP_200_OK,
         message="chat log retrieved",
+        data=result,
+    )
+
+
+@router.put(
+    "/logs/{chat_log_id}/review",
+    response_model=ApiResponse[AdminChatAdminReview],
+    status_code=status.HTTP_200_OK,
+    summary="관리자 채팅 검수 저장",
+    description=(
+        "관리자가 특정 채팅 로그에 대한 검수 결과를 저장하거나 수정합니다.\n\n"
+        "`chat_log_id`에 기존 검수 결과가 있으면 최신 검수 row를 수정하고, 없으면 새로 생성합니다."
+    ),
+)
+def save_admin_chat_review_api(
+    request: AdminChatReviewSaveRequest,
+    chat_log_id: int = Path(ge=1),
+    db: Session = Depends(get_db),
+) -> ApiResponse[AdminChatAdminReview]:
+    result = save_admin_chat_review(db, chat_log_id=chat_log_id, request=request)
+    return ApiResponse(
+        status=status.HTTP_200_OK,
+        message="chat admin review saved",
         data=result,
     )
 

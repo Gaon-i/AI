@@ -8,6 +8,16 @@ from pydantic import Field
 
 
 AdminChatReviewQueueReason = Literal["ERROR", "NO_ANSWER", "NEGATIVE_FEEDBACK"]
+AdminChatCorrectnessLabel = Literal["CORRECT", "PARTIAL", "INCORRECT"]
+AdminChatCitationLabel = Literal["APPROPRIATE", "WEAK", "WRONG", "NONE"]
+AdminChatRootCause = Literal[
+    "RETRIEVAL_FAIL",
+    "DOC_OUTDATED",
+    "NO_RELEVANT_DOC",
+    "PROMPT_OVERGENERATION",
+    "QUESTION_AMBIGUOUS",
+    "MODEL_HALLUCINATION",
+]
 
 
 class AdminChatLogDetail(BaseModel):
@@ -25,6 +35,8 @@ class AdminChatLogDetail(BaseModel):
     created_at: datetime
     retrieval_results: list["AdminChatRetrievalResult"] = Field(default_factory=list)
     error_logs: list["AdminChatErrorLog"] = Field(default_factory=list)
+    feedbacks: list["AdminChatFeedback"] = Field(default_factory=list)
+    admin_reviews: list["AdminChatAdminReview"] = Field(default_factory=list)
 
 
 class AdminChatRetrievalResult(BaseModel):
@@ -50,6 +62,40 @@ class AdminChatErrorLog(BaseModel):
     error_detail: Optional[str] = None
     occurred_step: Optional[str] = None
     created_at: datetime
+
+
+class AdminChatFeedback(BaseModel):
+    feedback_id: int
+    user_id: Optional[int] = None
+    feedback_type: str
+    is_helpful: Optional[bool] = None
+    rating: Optional[int] = None
+    reason_code: Optional[str] = None
+    feedback_comment: Optional[str] = None
+    feature_type: Optional[str] = None
+    created_at: datetime
+
+
+class AdminChatAdminReview(BaseModel):
+    review_id: int
+    admin_id: int
+    correctness_label: str
+    citation_label: Optional[str] = None
+    root_cause: Optional[str] = None
+    correction_required: bool
+    corrected_answer: Optional[str] = None
+    review_note: Optional[str] = None
+    created_at: datetime
+
+
+class AdminChatReviewSaveRequest(BaseModel):
+    admin_id: int = Field(ge=1)
+    correctness_label: AdminChatCorrectnessLabel
+    citation_label: Optional[AdminChatCitationLabel] = None
+    root_cause: Optional[AdminChatRootCause] = None
+    correction_required: bool = False
+    corrected_answer: Optional[str] = Field(default=None, max_length=5000)
+    review_note: Optional[str] = Field(default=None, max_length=2000)
 
 
 class AdminChatSessionSummary(BaseModel):

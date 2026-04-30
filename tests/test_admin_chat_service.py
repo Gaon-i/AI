@@ -2,7 +2,9 @@ from datetime import datetime
 
 import pytest
 
+from app.core.error_codes import CHAT_LOG_NOT_FOUND
 from app.core.exceptions import AppException
+from app.schemas.admin_chat import AdminChatReviewSaveRequest
 from app.services import admin_chat_service
 
 
@@ -69,6 +71,48 @@ def test_get_admin_chat_log_detail_returns_mapped_schema(monkeypatch: pytest.Mon
             )()
         ],
     )
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_feedbacks_by_chat_log_id",
+        lambda *_args, **_kwargs: [
+            type(
+                "ChatFeedbackStub",
+                (),
+                {
+                    "feedback_id": 41,
+                    "user_id": 7,
+                    "feedback_type": "DISLIKE",
+                    "is_helpful": False,
+                    "rating": None,
+                    "reason_code": "INCORRECT_ANSWER",
+                    "feedback_comment": "질문과 다른 답변입니다.",
+                    "feature_type": "FAQ_CHAT",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 3),
+                },
+            )()
+        ],
+    )
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_admin_reviews_by_chat_log_id",
+        lambda *_args, **_kwargs: [
+            type(
+                "ChatAdminReviewStub",
+                (),
+                {
+                    "review_id": 51,
+                    "reviewer_id": 1,
+                    "correctness_label": "INCORRECT",
+                    "citation_label": "WRONG",
+                    "root_cause": "RETRIEVAL_FAIL",
+                    "correction_required": True,
+                    "corrected_answer": "외박은 포털에서 신청합니다.",
+                    "review_note": "검색 후보가 잘못 선택됨",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 4),
+                },
+            )()
+        ],
+    )
 
     result = admin_chat_service.get_admin_chat_log_detail(object(), 11)
 
@@ -79,6 +123,12 @@ def test_get_admin_chat_log_detail_returns_mapped_schema(monkeypatch: pytest.Mon
     assert result.retrieval_results[0].regulation_chunk_id == 1001
     assert len(result.error_logs) == 1
     assert result.error_logs[0].error_type == "LLM_API_ERROR"
+    assert len(result.feedbacks) == 1
+    assert result.feedbacks[0].reason_code == "INCORRECT_ANSWER"
+    assert result.feedbacks[0].is_helpful is False
+    assert len(result.admin_reviews) == 1
+    assert result.admin_reviews[0].root_cause == "RETRIEVAL_FAIL"
+    assert result.admin_reviews[0].correction_required is True
 
 
 def test_get_admin_chat_log_detail_raises_not_found(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -88,6 +138,91 @@ def test_get_admin_chat_log_detail_raises_not_found(monkeypatch: pytest.MonkeyPa
         admin_chat_service.get_admin_chat_log_detail(object(), 999)
 
     assert exc_info.value.error_code.code == "CHAT_LOG_NOT_FOUND"
+
+
+def test_save_admin_chat_review_saves_review(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {}
+    chat_log = type("ChatLogStub", (), {"chat_log_id": 101})()
+    admin_review = type(
+        "ChatAdminReviewStub",
+        (),
+        {
+            "review_id": 51,
+            "reviewer_id": 1,
+            "correctness_label": "INCORRECT",
+            "citation_label": "WRONG",
+            "root_cause": "RETRIEVAL_FAIL",
+            "correction_required": True,
+            "corrected_answer": "택배는 각 생활관 행정실에서 수령할 수 있습니다.",
+            "review_note": "택배 질문에 외박 문서가 검색됨",
+            "created_at": datetime(2026, 4, 30, 10, 30, 0),
+        },
+    )()
+
+    class FakeDb:
+        def commit(self):
+            calls["committed"] = True
+
+        def refresh(self, item):
+            calls["refreshed"] = item
+
+    def fake_save_chat_admin_review(_db, **kwargs):
+        calls.update(kwargs)
+        return admin_review
+
+    monkeypatch.setattr(admin_chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(admin_chat_service, "save_chat_admin_review", fake_save_chat_admin_review)
+
+    result = admin_chat_service.save_admin_chat_review(
+        FakeDb(),
+        chat_log_id=101,
+        request=AdminChatReviewSaveRequest(
+            admin_id=1,
+            correctness_label="INCORRECT",
+            citation_label="WRONG",
+            root_cause="RETRIEVAL_FAIL",
+            correction_required=True,
+            corrected_answer="택배는 각 생활관 행정실에서 수령할 수 있습니다.",
+            review_note="택배 질문에 외박 문서가 검색됨",
+        ),
+    )
+
+    assert calls["chat_log_id"] == 101
+    assert calls["reviewer_id"] == 1
+    assert calls["correctness_label"] == "INCORRECT"
+    assert calls["citation_label"] == "WRONG"
+    assert calls["root_cause"] == "RETRIEVAL_FAIL"
+    assert calls["correction_required"] is True
+    assert calls["corrected_answer"] == "택배는 각 생활관 행정실에서 수령할 수 있습니다."
+    assert calls["review_note"] == "택배 질문에 외박 문서가 검색됨"
+    assert calls["committed"] is True
+    assert calls["refreshed"] is admin_review
+    assert result.review_id == 51
+    assert result.root_cause == "RETRIEVAL_FAIL"
+    assert result.correction_required is True
+
+
+def test_save_admin_chat_review_raises_when_chat_log_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(admin_chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        admin_chat_service,
+        "save_chat_admin_review",
+        lambda *_args, **_kwargs: pytest.fail("missing chat log should not save admin review"),
+    )
+
+    with pytest.raises(AppException) as exc_info:
+        admin_chat_service.save_admin_chat_review(
+            object(),
+            chat_log_id=999,
+            request=AdminChatReviewSaveRequest(
+                admin_id=1,
+                correctness_label="INCORRECT",
+            ),
+        )
+
+    assert exc_info.value.error_code == CHAT_LOG_NOT_FOUND
 
 
 def test_get_admin_chat_sessions_by_date_returns_paginated_sessions(monkeypatch: pytest.MonkeyPatch) -> None:

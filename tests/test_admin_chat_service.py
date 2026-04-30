@@ -146,3 +146,102 @@ def test_get_admin_chat_sessions_by_date_returns_paginated_sessions(monkeypatch:
     assert result.items[1].session_id == "session-456"
     assert result.items[0].is_expired is False
     assert result.items[1].is_expired is True
+
+
+def test_get_admin_chat_review_queue_returns_paginated_items(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = {}
+    chat_log = type(
+        "ChatLogStub",
+        (),
+        {
+            "chat_log_id": 101,
+            "session_id": "session-123",
+            "user_id": 7,
+            "question": "택배 어디서 받아?",
+            "answer": "외박 신청은 생활관 홈페이지에서..." * 20,
+            "answer_status": type("StatusStub", (), {"value": "SUCCESS"})(),
+            "created_at": datetime(2026, 4, 30, 10, 0, 0),
+        },
+    )()
+
+    monkeypatch.setattr(admin_chat_service, "count_chat_review_queue_items", lambda *_args, **_kwargs: 21)
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_review_queue_items",
+        lambda *_args, **kwargs: calls.update(kwargs) or [
+            {
+                "chat_log": chat_log,
+                "negative_feedback_count": 2,
+                "latest_feedback_reason_code": "INCORRECT_ANSWER",
+            }
+        ],
+    )
+
+    result = admin_chat_service.get_admin_chat_review_queue(
+        object(),
+        page=2,
+        size=10,
+        reason="NEGATIVE_FEEDBACK",
+    )
+
+    assert calls == {"reason": "NEGATIVE_FEEDBACK", "offset": 10, "limit": 10}
+    assert result.page == 2
+    assert result.size == 10
+    assert result.total_count == 21
+    assert result.total_pages == 3
+    assert len(result.items) == 1
+    assert result.items[0].chat_log_id == 101
+    assert result.items[0].review_reason == "NEGATIVE_FEEDBACK"
+    assert result.items[0].negative_feedback_count == 2
+    assert result.items[0].latest_feedback_reason_code == "INCORRECT_ANSWER"
+    assert len(result.items[0].answer_preview or "") == admin_chat_service.ANSWER_PREVIEW_MAX_LENGTH
+
+
+@pytest.mark.parametrize(
+    ("answer_status", "expected_reason"),
+    [
+        ("ERROR", "ERROR"),
+        ("NO_ANSWER", "NO_ANSWER"),
+        ("SUCCESS", "NEGATIVE_FEEDBACK"),
+    ],
+)
+def test_get_admin_chat_review_queue_resolves_review_reason_by_priority(
+    monkeypatch: pytest.MonkeyPatch,
+    answer_status: str,
+    expected_reason: str,
+) -> None:
+    chat_log = type(
+        "ChatLogStub",
+        (),
+        {
+            "chat_log_id": 101,
+            "session_id": "session-123",
+            "user_id": None,
+            "question": "택배 어디서 받아?",
+            "answer": None,
+            "answer_status": type("StatusStub", (), {"value": answer_status})(),
+            "created_at": datetime(2026, 4, 30, 10, 0, 0),
+        },
+    )()
+
+    monkeypatch.setattr(admin_chat_service, "count_chat_review_queue_items", lambda *_args, **_kwargs: 1)
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_review_queue_items",
+        lambda *_args, **_kwargs: [
+            {
+                "chat_log": chat_log,
+                "negative_feedback_count": 1,
+                "latest_feedback_reason_code": "OTHER",
+            }
+        ],
+    )
+
+    result = admin_chat_service.get_admin_chat_review_queue(
+        object(),
+        page=1,
+        size=20,
+        reason=None,
+    )
+
+    assert result.items[0].review_reason == expected_reason

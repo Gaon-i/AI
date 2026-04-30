@@ -1,9 +1,13 @@
 from datetime import date
 from datetime import datetime
+from typing import Literal
 from typing import Optional
 
 from pydantic import BaseModel
 from pydantic import Field
+
+
+AdminChatReviewQueueReason = Literal["ERROR", "NO_ANSWER", "NEGATIVE_FEEDBACK"]
 
 
 class AdminChatLogDetail(BaseModel):
@@ -65,3 +69,24 @@ class AdminChatSessionsByDateResult(BaseModel):
     size: int
     total_count: int
     items: list[AdminChatSessionSummary]
+
+
+class AdminChatReviewQueueItem(BaseModel):
+    chat_log_id: int
+    session_id: str
+    user_id: Optional[int] = None
+    question: str
+    answer_preview: Optional[str] = None
+    answer_status: str
+    review_reason: AdminChatReviewQueueReason
+    negative_feedback_count: int
+    latest_feedback_reason_code: Optional[str] = None
+    created_at: datetime
+
+
+class AdminChatReviewQueueResult(BaseModel):
+    page: int
+    size: int
+    total_count: int
+    total_pages: int
+    items: list[AdminChatReviewQueueItem]

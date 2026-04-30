@@ -83,6 +83,30 @@ def list_chat_error_logs_by_chat_log_id(
     return list(db.execute(statement).scalars().all())
 
 
+def list_chat_feedbacks_by_chat_log_id(
+    db: Session,
+    chat_log_id: int,
+) -> list[ChatFeedback]:
+    statement = (
+        select(ChatFeedback)
+        .where(ChatFeedback.chat_log_id == chat_log_id)
+        .order_by(ChatFeedback.created_at.desc(), ChatFeedback.feedback_id.desc())
+    )
+    return list(db.execute(statement).scalars().all())
+
+
+def list_chat_admin_reviews_by_chat_log_id(
+    db: Session,
+    chat_log_id: int,
+) -> list[ChatAdminReview]:
+    statement = (
+        select(ChatAdminReview)
+        .where(ChatAdminReview.chat_log_id == chat_log_id)
+        .order_by(ChatAdminReview.created_at.desc(), ChatAdminReview.review_id.desc())
+    )
+    return list(db.execute(statement).scalars().all())
+
+
 def count_chat_review_queue_items(db: Session, reason: Optional[str] = None) -> int:
     statement = select(func.count(ChatLog.chat_log_id)).where(*_build_chat_review_queue_conditions(reason))
     return int(db.execute(statement).scalar_one())

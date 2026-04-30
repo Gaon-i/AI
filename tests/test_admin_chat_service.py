@@ -69,6 +69,48 @@ def test_get_admin_chat_log_detail_returns_mapped_schema(monkeypatch: pytest.Mon
             )()
         ],
     )
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_feedbacks_by_chat_log_id",
+        lambda *_args, **_kwargs: [
+            type(
+                "ChatFeedbackStub",
+                (),
+                {
+                    "feedback_id": 41,
+                    "user_id": 7,
+                    "feedback_type": "DISLIKE",
+                    "is_helpful": False,
+                    "rating": None,
+                    "reason_code": "INCORRECT_ANSWER",
+                    "feedback_comment": "질문과 다른 답변입니다.",
+                    "feature_type": "FAQ_CHAT",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 3),
+                },
+            )()
+        ],
+    )
+    monkeypatch.setattr(
+        admin_chat_service,
+        "list_chat_admin_reviews_by_chat_log_id",
+        lambda *_args, **_kwargs: [
+            type(
+                "ChatAdminReviewStub",
+                (),
+                {
+                    "review_id": 51,
+                    "reviewer_id": 1,
+                    "correctness_label": "INCORRECT",
+                    "citation_label": "WRONG",
+                    "root_cause": "RETRIEVAL_FAIL",
+                    "correction_required": True,
+                    "corrected_answer": "외박은 포털에서 신청합니다.",
+                    "review_note": "검색 후보가 잘못 선택됨",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 4),
+                },
+            )()
+        ],
+    )
 
     result = admin_chat_service.get_admin_chat_log_detail(object(), 11)
 
@@ -79,6 +121,12 @@ def test_get_admin_chat_log_detail_returns_mapped_schema(monkeypatch: pytest.Mon
     assert result.retrieval_results[0].regulation_chunk_id == 1001
     assert len(result.error_logs) == 1
     assert result.error_logs[0].error_type == "LLM_API_ERROR"
+    assert len(result.feedbacks) == 1
+    assert result.feedbacks[0].reason_code == "INCORRECT_ANSWER"
+    assert result.feedbacks[0].is_helpful is False
+    assert len(result.admin_reviews) == 1
+    assert result.admin_reviews[0].root_cause == "RETRIEVAL_FAIL"
+    assert result.admin_reviews[0].correction_required is True
 
 
 def test_get_admin_chat_log_detail_raises_not_found(monkeypatch: pytest.MonkeyPatch) -> None:

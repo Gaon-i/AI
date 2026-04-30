@@ -58,6 +58,32 @@ def test_get_admin_chat_log_api_returns_chat_log_detail(
                     "created_at": datetime(2026, 4, 27, 10, 0, 2),
                 }
             ],
+            feedbacks=[
+                {
+                    "feedback_id": 41,
+                    "user_id": 7,
+                    "feedback_type": "DISLIKE",
+                    "is_helpful": False,
+                    "rating": None,
+                    "reason_code": "INCORRECT_ANSWER",
+                    "feedback_comment": "질문과 다른 답변입니다.",
+                    "feature_type": "FAQ_CHAT",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 3),
+                }
+            ],
+            admin_reviews=[
+                {
+                    "review_id": 51,
+                    "admin_id": 1,
+                    "correctness_label": "INCORRECT",
+                    "citation_label": "WRONG",
+                    "root_cause": "RETRIEVAL_FAIL",
+                    "correction_required": True,
+                    "corrected_answer": "외박은 포털에서 신청합니다.",
+                    "review_note": "검색 후보가 잘못 선택됨",
+                    "created_at": datetime(2026, 4, 27, 10, 0, 4),
+                }
+            ],
         ),
     )
 
@@ -108,6 +134,32 @@ def test_get_admin_chat_log_api_returns_chat_log_detail(
                     "error_detail": "RuntimeError: llm failed",
                     "occurred_step": "ANSWER_GENERATION",
                     "created_at": "2026-04-27T10:00:02",
+                }
+            ],
+            "feedbacks": [
+                {
+                    "feedback_id": 41,
+                    "user_id": 7,
+                    "feedback_type": "DISLIKE",
+                    "is_helpful": False,
+                    "rating": None,
+                    "reason_code": "INCORRECT_ANSWER",
+                    "feedback_comment": "질문과 다른 답변입니다.",
+                    "feature_type": "FAQ_CHAT",
+                    "created_at": "2026-04-27T10:00:03",
+                }
+            ],
+            "admin_reviews": [
+                {
+                    "review_id": 51,
+                    "admin_id": 1,
+                    "correctness_label": "INCORRECT",
+                    "citation_label": "WRONG",
+                    "root_cause": "RETRIEVAL_FAIL",
+                    "correction_required": True,
+                    "corrected_answer": "외박은 포털에서 신청합니다.",
+                    "review_note": "검색 후보가 잘못 선택됨",
+                    "created_at": "2026-04-27T10:00:04",
                 }
             ],
         },

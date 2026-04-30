@@ -27,5 +27,4 @@ def create_chat_feedback(
     )
     db.add(chat_feedback)
     db.flush()
-    db.refresh(chat_feedback)
     return chat_feedback

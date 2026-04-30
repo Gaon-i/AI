@@ -53,8 +53,8 @@ class ChatFeedbackCreateResponse(BaseModel):
     feedback_id: int
     chat_log_id: int
     is_helpful: bool
-    feedback_type: str
-    reason_code: Optional[str] = None
+    feedback_type: Literal["LIKE", "DISLIKE", "RATING"]
+    reason_code: Optional[ChatFeedbackReasonCode] = None
     feedback_comment: Optional[str] = None
     created_at: datetime
 

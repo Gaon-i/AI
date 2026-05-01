@@ -161,6 +161,76 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     assert db.rollback_count == 0
 
 
+def test_answer_chat_question_uses_expanded_query_for_embedding_and_keywords(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = FakeSession()
+    finalize_db = FakeSession()
+    chat_session = _build_chat_session()
+    chat_log = _build_chat_log()
+    expanded_query = "2긱에 atm기 있어? 검색 키워드: 제2학생생활관, 2관, ATM, 현금자동입출금기, 자동화기기"
+    embedded_texts: list[str] = []
+    search_calls: list[dict] = []
+
+    monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "get_session_factory", lambda: (lambda: finalize_db))
+    monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (True, "2긱에 atm기 있어?"))
+    monkeypatch.setattr(
+        chat_service,
+        "expand_query_for_retrieval",
+        lambda *_args, **_kwargs: expanded_query,
+    )
+    monkeypatch.setattr(
+        chat_service,
+        "create_query_embedding",
+        lambda text: embedded_texts.append(text) or [0.1, 0.2, 0.3],
+    )
+
+    def fake_search_hybrid_chunks(*_args, **kwargs):
+        search_calls.append(kwargs)
+        return [
+            {
+                "regulation_chunk_id": 1003,
+                "document_id": "facility_usage_017",
+                "document_version": "v1",
+                "chunk_id": "chunk-1",
+                "content": "제2학생생활관 ATM은 지하 편의시설 근처에 있습니다.",
+                "source": "생활관 시설 안내",
+                "source_url": "https://example.com/rules/3",
+                "similarity": 0.9,
+            }
+        ]
+
+    monkeypatch.setattr(chat_service, "search_hybrid_chunks", fake_search_hybrid_chunks)
+    monkeypatch.setattr(
+        chat_service,
+        "generate_answer",
+        lambda *_args, **_kwargs: AnswerGenerationResult(
+            answer="제2학생생활관 ATM은 지하 편의시설 근처에 있습니다.",
+            source_url="https://example.com/rules/3",
+            cited_regulation_chunk_ids=[1003],
+        ),
+    )
+    monkeypatch.setattr(chat_service, "create_chat_retrieval_results", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(chat_service, "mark_chat_retrieval_results_used_in_answer", lambda *_args, **_kwargs: [])
+
+    chat_service.answer_chat_question(
+        db,
+        ChatRequest(
+            session_id="session-123",
+            question="2긱에 atm기 있어?",
+            dormitory="제2학생생활관",
+        ),
+    )
+
+    assert embedded_texts == [expanded_query]
+    assert search_calls[0]["query_text"] == expanded_query
+    assert chat_log.rewritten_query == expanded_query
+
+
 def test_answer_chat_question_uses_top_scored_chunks_when_dormitory_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -430,3 +500,28 @@ def test_build_chat_error_metadata_defaults_timeout_error() -> None:
     assert result.error_type == chat_service.ERROR_TYPE_TIMEOUT
     assert result.occurred_step is None
     assert result.error_message == "request timed out"
+
+
+def test_should_fallback_retrieval_uses_vector_score_before_hybrid_similarity() -> None:
+    chunks = [
+        {
+            "similarity": 0.9,
+            "vector_score": 0.2,
+        }
+    ]
+
+    assert chat_service._should_fallback_retrieval(chunks) is True
+
+
+def test_should_fallback_retrieval_falls_back_to_similarity_for_legacy_results() -> None:
+    chunks = [
+        {
+            "similarity": 0.9,
+        }
+    ]
+
+    assert chat_service._should_fallback_retrieval(chunks) is False
+
+
+def test_should_pre_expand_query_for_atm_and_dormitory_alias() -> None:
+    assert chat_service._should_pre_expand_query("2긱에 atm기 있어?") is True

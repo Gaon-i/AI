@@ -1,3 +1,4 @@
+import json
 import re
 from dataclasses import dataclass
 from typing import Optional
@@ -58,13 +59,29 @@ def generate_answer(
 너는 기숙사 안내 챗봇이다.
 아래 제공된 정보를 기반으로만 질문에 답변해라.
 모르는 내용은 추측하지 말고 모른다고 말해라.
+참고 정보에 없는 일반 상식이나 추측으로 답하지 마라.
+"일반적으로", "가능성이 높습니다", "확인하는 것이 좋습니다"처럼 근거 없는 표현을 사용하지 마라.
 질문에서 생활관을 특정하지 않았고 참고 정보가 특정 생활관에만 해당하면, 해당 생활관 기준 답변임을 명확히 밝혀라.
 질문에서 생활관을 특정하지 않았더라도 생활관별 구분을 강제로 만들지 말고, 가장 관련 있는 정보 중심으로 간결하게 답변해라.
 참고 정보에 생활관 구분이 없거나 공통 규정으로 보이면 일반 답변으로 안내해라.
 {fallback_instruction}
-답변에는 `[C1]`, `[C2]` 같은 내부 근거 라벨을 절대 출력하지 마라.
-출처 문구는 서버가 별도로 붙이므로 답변 본문에는 출처 줄을 만들지 마라.
-질문에 답할 정보가 충분하지 않으면 정확히 "{settings.chat_no_answer_message}"라고만 답해라.
+
+반드시 아래 JSON 형식으로만 출력해라.
+설명 문장, 마크다운, 코드블록은 출력하지 마라.
+
+형식:
+{{
+  "answer": "사용자에게 보여줄 최종 답변",
+  "used_reference_index": 1
+}}
+
+규칙:
+- "answer"에는 답변 본문만 작성해라.
+- "answer"에는 출처 문구를 넣지 마라.
+- "used_reference_index"에는 답변 작성에 가장 직접적으로 사용한 참고 정보 번호를 넣어라.
+- 여러 참고 정보를 사용했다면 가장 핵심 근거가 되는 참고 정보 번호 하나만 넣어라.
+- 질문에 답할 정보가 충분하지 않으면 "answer"는 정확히 "{settings.chat_no_answer_message}"로 작성하고, "used_reference_index"는 null로 작성해라.
+- 참고 정보 번호는 [참고 정보 1], [참고 정보 2]의 숫자를 기준으로 한다.
 
 [질문]
 {question}
@@ -81,14 +98,24 @@ def generate_answer(
         ]
     )
 
-    raw_answer = response.choices[0].message.content.strip()
-    answer_without_labels = _strip_citation_labels(raw_answer)
-    source_chunk = _select_source_chunk(chunks)
+    raw_output = response.choices[0].message.content.strip()
+    parsed_answer, used_reference_index = _parse_generation_output(
+        raw_output,
+        no_answer_message=settings.chat_no_answer_message,
+    )
+
+    answer_without_labels = _strip_citation_labels(parsed_answer)
+    source_chunk = _select_source_chunk_by_reference_index(
+        chunks,
+        used_reference_index,
+    )
+
     answer = _format_answer_with_source(
         answer_without_labels,
         source_chunk=source_chunk,
         no_answer_message=settings.chat_no_answer_message,
     )
+
     cited_regulation_chunk_ids = _resolve_used_regulation_chunk_ids(source_chunk)
     source_url = _resolve_source_url(source_chunk)
 
@@ -103,10 +130,6 @@ def _strip_citation_labels(answer: str) -> str:
     return re.sub(r"\s*\[C\d+\]", "", answer).strip()
 
 
-def _select_source_chunk(chunks: list[dict]) -> Optional[dict]:
-    if not chunks:
-        return None
-    return chunks[0]
 
 
 def _format_answer_with_source(
@@ -155,3 +178,62 @@ def _resolve_source_url(source_chunk: Optional[dict]) -> str:
     if source_chunk is None:
         return ""
     return source_chunk.get("source_url", "") or ""
+
+
+def _parse_generation_output(
+    raw_output: str,
+    *,
+    no_answer_message: str,
+) -> tuple[str, Optional[int]]:
+    try:
+        payload = json.loads(_strip_json_code_block(raw_output))
+    except json.JSONDecodeError:
+        # 혹시 모델이 JSON 형식을 어기면 기존 방식처럼 전체 텍스트를 답변으로 사용
+        return raw_output.strip(), None
+
+    if not isinstance(payload, dict):
+        return no_answer_message, None
+
+    answer = payload.get("answer")
+    if not isinstance(answer, str) or not answer.strip():
+        return no_answer_message, None
+
+    used_reference_index = payload.get("used_reference_index")
+    if used_reference_index is None:
+        return answer.strip(), None
+
+    if isinstance(used_reference_index, int):
+        return answer.strip(), used_reference_index
+
+    return answer.strip(), None
+
+
+def _strip_json_code_block(raw_output: str) -> str:
+    text = raw_output.strip()
+
+    if text.startswith("```json"):
+        text = text.removeprefix("```json").strip()
+    elif text.startswith("```"):
+        text = text.removeprefix("```").strip()
+
+    if text.endswith("```"):
+        text = text.removesuffix("```").strip()
+
+    return text
+
+
+def _select_source_chunk_by_reference_index(
+    chunks: list[dict],
+    used_reference_index: Optional[int],
+) -> Optional[dict]:
+    if not chunks:
+        return None
+
+    if used_reference_index is None:
+        return None
+
+    chunk_index = used_reference_index - 1
+    if chunk_index < 0 or chunk_index >= len(chunks):
+        return None
+
+    return chunks[chunk_index]

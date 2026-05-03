@@ -38,12 +38,6 @@ class Settings(BaseSettings):
 
     chat_fallback_similarity_threshold: float = 0.35
 
-    chat_query_rewrite_enabled: bool = True
-    chat_query_rewrite_model: str = "gpt-4o-mini"
-    chat_query_rewrite_temperature: float = 0.0
-    chat_retrieval_method_query_expansion: str = "hybrid_query_expansion_fallback"
-    chat_retrieval_version_query_expansion: str = "hybrid-query-expansion-fallback-v1"
-
 
 @lru_cache
 def get_settings() -> Settings:

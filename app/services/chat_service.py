@@ -798,29 +798,6 @@ def _should_pre_expand_query(question: str) -> bool:
     if any(trigger in compact_question for trigger in microwave_triggers):
         return True
 
-    atm_triggers = [
-        "atm",
-        "atm기",
-        "에이티엠",
-        "현금인출",
-        "현금뽑",
-        "은행",
-        "자동화기기",
-        "현금자동입출금기",
-    ]
-
-    if any(trigger in compact_question.lower() for trigger in atm_triggers):
-        return True
-
-    dormitory_alias_triggers = [
-        "1긱",
-        "2긱",
-        "3긱",
-    ]
-
-    if any(trigger in compact_question for trigger in dormitory_alias_triggers):
-        return True
-
     cooking_triggers = [
         "라면끓",
         "라면먹",

@@ -330,7 +330,6 @@ def _answer_single_dormitory_chat(
         raise
 
     db.commit()
-    db.close()
 
     final_answer_status = ChatAnswerStatus.SUCCESS
     final_source_url = answer_result.source_url or ""
@@ -485,7 +484,6 @@ def _answer_unspecified_dormitory_chat(
         raise
 
     db.commit()
-    db.close()
 
     final_answer_status = ChatAnswerStatus.SUCCESS
     final_source_url = answer_result.source_url or ""
@@ -821,4 +819,3 @@ def _should_pre_expand_query(question: str) -> bool:
         return True
 
     return False
-

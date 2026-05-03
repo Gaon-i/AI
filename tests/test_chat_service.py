@@ -154,7 +154,7 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     assert retrieval_calls["mark_used_chat_log_id"] == 501
     assert retrieval_calls["cited_regulation_chunk_ids"] == [1001]
     assert db.commit_count == 2
-    assert db.close_count == 1
+    assert db.close_count == 0
     assert finalize_db.commit_count == 1
     assert db.flush_count == 0
     assert finalize_db.flush_count == 1

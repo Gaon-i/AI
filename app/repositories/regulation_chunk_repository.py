@@ -271,7 +271,6 @@ def search_hybrid_chunks(
     dormitory: str,
     top_k: int = 3,
     candidate_k: int = 20,
-    vector_weight: float = 0.7,
     keyword_weight: float = 0.3,
 ):
     """단일 생활관과 공통 문서를 대상으로 하이브리드 검색합니다."""
@@ -282,7 +281,6 @@ def search_hybrid_chunks(
         query_embedding=query_embedding,
         top_k=top_k,
         candidate_k=candidate_k,
-        vector_weight=vector_weight,
         keyword_weight=keyword_weight,
         filter_sql="(rd.dormitory = :dormitory OR rd.dormitory IS NULL)",
         params={"dormitory": dormitory},
@@ -296,7 +294,6 @@ def search_hybrid_chunks_for_dormitories(
     dormitories: list[str],
     top_k: int = 3,
     candidate_k: int = 20,
-    vector_weight: float = 0.7,
     keyword_weight: float = 0.3,
 ):
     """여러 생활관과 공통 문서를 대상으로 하이브리드 검색합니다."""
@@ -307,7 +304,6 @@ def search_hybrid_chunks_for_dormitories(
         query_embedding=query_embedding,
         top_k=top_k,
         candidate_k=candidate_k,
-        vector_weight=vector_weight,
         keyword_weight=keyword_weight,
         filter_sql="(rd.dormitory = ANY(:dormitories) OR rd.dormitory IS NULL)",
         params={"dormitories": dormitories},
@@ -320,7 +316,6 @@ def search_hybrid_chunks_all_dormitories(
     query_embedding: list[float],
     top_k: int = 5,
     candidate_k: int = 30,
-    vector_weight: float = 0.7,
     keyword_weight: float = 0.3,
 ):
     """생활관 필터 없이 전체 활성 regulation_chunk를 대상으로 하이브리드 검색합니다."""
@@ -331,7 +326,6 @@ def search_hybrid_chunks_all_dormitories(
         query_embedding=query_embedding,
         top_k=top_k,
         candidate_k=candidate_k,
-        vector_weight=vector_weight,
         keyword_weight=keyword_weight,
         filter_sql="TRUE",
         params={},
@@ -345,7 +339,6 @@ def _search_hybrid_chunks(
     query_embedding: list[float],
     top_k: int,
     candidate_k: int,
-    vector_weight: float,
     keyword_weight: float,
     filter_sql: str,
     params: dict,
@@ -463,22 +456,16 @@ def _search_hybrid_chunks(
         scored AS (
             SELECT
                 *,
+                LEAST(1, GREATEST(0, COALESCE(vector_similarity, 0))) AS vector_score,
                 COALESCE(keyword_score / NULLIF(MAX(keyword_score) OVER (), 0), 0) AS normalized_keyword_score,
-                CASE
-                    WHEN keyword_score IS NULL OR keyword_score = 0 THEN :vector_weight
-                    ELSE :vector_weight + :keyword_weight
-                END AS available_weight,
                 (
-                    (:vector_weight * COALESCE(vector_similarity, 0)) +
+                    LEAST(1, GREATEST(0, COALESCE(vector_similarity, 0))) +
                     (
                         :keyword_weight *
-                        COALESCE(keyword_score / NULLIF(MAX(keyword_score) OVER (), 0), 0)
+                        COALESCE(keyword_score / NULLIF(MAX(keyword_score) OVER (), 0), 0) *
+                        (1 - LEAST(1, GREATEST(0, COALESCE(vector_similarity, 0))))
                     )
-                ) /
-                CASE
-                    WHEN keyword_score IS NULL OR keyword_score = 0 THEN :vector_weight
-                    ELSE :vector_weight + :keyword_weight
-                END AS hybrid_score
+                ) AS hybrid_score
             FROM dedup
         )
 
@@ -492,6 +479,7 @@ def _search_hybrid_chunks(
             source_url,
             dormitory,
             vector_similarity,
+            vector_score,
             keyword_score,
             normalized_keyword_score,
             vector_rank,
@@ -510,7 +498,6 @@ def _search_hybrid_chunks(
             "query_text": query_text.strip(),
             "top_k": top_k,
             "candidate_k": candidate_k,
-            "vector_weight": vector_weight,
             "keyword_weight": keyword_weight,
             **params,
         },
@@ -528,6 +515,7 @@ def _search_hybrid_chunks(
             "retrieval_group": row.dormitory,
             "similarity": float(row.hybrid_score),
             "vector_similarity": float(row.vector_similarity) if row.vector_similarity is not None else None,
+            "vector_score": float(row.vector_score) if row.vector_score is not None else None,
             "keyword_score": float(row.keyword_score) if row.keyword_score is not None else None,
             "normalized_keyword_score": (
                 float(row.normalized_keyword_score)

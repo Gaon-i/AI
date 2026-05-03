@@ -115,11 +115,12 @@ def test_search_hybrid_chunks_maps_hybrid_score_to_similarity() -> None:
                     source_url="https://example.com/rules/1",
                     dormitory="제1학생생활관",
                     vector_similarity=0.82,
+                    vector_score=0.82,
                     keyword_score=0.4,
                     normalized_keyword_score=1.0,
                     vector_rank=2,
                     keyword_rank=1,
-                    hybrid_score=0.91,
+                    hybrid_score=0.874,
                 )
             ]
 
@@ -138,8 +139,9 @@ def test_search_hybrid_chunks_maps_hybrid_score_to_similarity() -> None:
 
     assert executed_params[0]["query_text"] == "외박 신청"
     assert executed_params[0]["dormitory"] == "제1학생생활관"
-    assert result[0]["similarity"] == 0.91
+    assert result[0]["similarity"] == 0.874
     assert result[0]["vector_similarity"] == 0.82
+    assert result[0]["vector_score"] == 0.82
     assert result[0]["keyword_score"] == 0.4
     assert result[0]["normalized_keyword_score"] == 1.0
 

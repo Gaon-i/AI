@@ -20,10 +20,10 @@ class Settings(BaseSettings):
     notice_summary_model: str = "gpt-4o-mini"
     chat_prompt_version_single: str = "chat-answer-source-v1"
     chat_prompt_version_grouped: str = "chat-answer-unspecified-dormitory-source-v1"
-    chat_retrieval_version_single: str = "dormitory-search-v1"
-    chat_retrieval_version_grouped: str = "dormitory-search-unspecified-v1"
-    chat_retrieval_method_single: str = "vector_dormitory_top_k"
-    chat_retrieval_method_grouped: str = "vector_unspecified_dormitory_top_k"
+    chat_retrieval_version_single: str = "hybrid-dormitory-search-v1"
+    chat_retrieval_version_grouped: str = "hybrid-dormitory-search-unspecified-v1"
+    chat_retrieval_method_single: str = "hybrid_dormitory_top_k"
+    chat_retrieval_method_grouped: str = "hybrid_unspecified_dormitory_top_k"
     chat_no_answer_message: str = "관련 정보를 찾을 수 없습니다."
     chat_invalid_question_message: str = "기숙사 관련 질문을 입력해주세요."
     chat_single_dormitory_top_k: int = 3
@@ -33,8 +33,8 @@ class Settings(BaseSettings):
     chat_session_timeout_minutes: int = 30
 
     chat_fallback_top_k: int = 5
-    chat_retrieval_method_fallback: str = "vector_all_dormitories_fallback"
-    chat_retrieval_version_fallback: str = "dormitory-search-fallback-v1"
+    chat_retrieval_method_fallback: str = "hybrid_all_dormitories_fallback"
+    chat_retrieval_version_fallback: str = "hybrid-dormitory-search-fallback-v1"
 
     chat_fallback_similarity_threshold: float = 0.35
 
@@ -50,4 +50,3 @@ def get_settings() -> Settings:
 
 
 Settings.model_config = SettingsConfigDict(extra="ignore")
-

@@ -94,3 +94,77 @@ def test_count_chunks_for_document_uses_count_query() -> None:
 
     assert result == 3
     assert len(executed_statements) == 1
+
+
+def test_search_hybrid_chunks_maps_hybrid_score_to_similarity() -> None:
+    executed_params: list[dict] = []
+
+    class MappingResult:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return [
+                SimpleNamespace(
+                    regulation_chunk_id=1001,
+                    document_id="dorm-rule",
+                    document_version="v1",
+                    chunk_id="chunk-1",
+                    content="외박 신청은 포털에서 가능합니다.",
+                    source="생활관 규정집",
+                    source_url="https://example.com/rules/1",
+                    dormitory="제1학생생활관",
+                    vector_similarity=0.82,
+                    keyword_score=0.4,
+                    normalized_keyword_score=1.0,
+                    vector_rank=2,
+                    keyword_rank=1,
+                    hybrid_score=0.91,
+                )
+            ]
+
+    class HybridSession:
+        def execute(self, _statement, params):
+            executed_params.append(params)
+            return MappingResult()
+
+    result = regulation_chunk_repository.search_hybrid_chunks(
+        db=HybridSession(),
+        query_text="  외박 신청  ",
+        query_embedding=[0.1, 0.2, 0.3],
+        dormitory="제1학생생활관",
+        top_k=3,
+    )
+
+    assert executed_params[0]["query_text"] == "외박 신청"
+    assert executed_params[0]["dormitory"] == "제1학생생활관"
+    assert result[0]["similarity"] == 0.91
+    assert result[0]["vector_similarity"] == 0.82
+    assert result[0]["keyword_score"] == 0.4
+    assert result[0]["normalized_keyword_score"] == 1.0
+
+
+def test_search_hybrid_chunks_for_dormitories_passes_dormitory_list() -> None:
+    executed_params: list[dict] = []
+
+    class EmptyMappingResult:
+        def mappings(self):
+            return self
+
+        def all(self):
+            return []
+
+    class HybridSession:
+        def execute(self, _statement, params):
+            executed_params.append(params)
+            return EmptyMappingResult()
+
+    result = regulation_chunk_repository.search_hybrid_chunks_for_dormitories(
+        db=HybridSession(),
+        query_text="택배",
+        query_embedding=[0.1, 0.2, 0.3],
+        dormitories=["제1학생생활관", "제2학생생활관"],
+    )
+
+    assert result == []
+    assert executed_params[0]["dormitories"] == ["제1학생생활관", "제2학생생활관"]

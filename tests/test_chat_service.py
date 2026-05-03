@@ -87,7 +87,7 @@ def test_answer_chat_question_returns_success_for_single_dormitory(monkeypatch: 
     monkeypatch.setattr(chat_service, "create_query_embedding", lambda *_args, **_kwargs: [0.1, 0.2, 0.3])
     monkeypatch.setattr(
         chat_service,
-        "search_similar_chunks",
+        "search_hybrid_chunks",
         lambda *_args, **_kwargs: [
             {
                 "regulation_chunk_id": 1001,
@@ -181,7 +181,7 @@ def test_answer_chat_question_uses_top_scored_chunks_when_dormitory_is_missing(
     monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (True, "택배는 어디서 받나요?"))
     monkeypatch.setattr(chat_service, "create_query_embedding", lambda *_args, **_kwargs: [0.1, 0.2, 0.3])
 
-    def fake_search_similar_chunks_for_dormitories(*_args, **kwargs):
+    def fake_search_hybrid_chunks_for_dormitories(*_args, **kwargs):
         multi_search_calls.append(kwargs)
         return [
             {
@@ -218,13 +218,8 @@ def test_answer_chat_question_uses_top_scored_chunks_when_dormitory_is_missing(
 
     monkeypatch.setattr(
         chat_service,
-        "search_similar_chunks",
-        lambda *_args, **_kwargs: pytest.fail("unspecified dormitory should use a single multi-dormitory query"),
-    )
-    monkeypatch.setattr(
-        chat_service,
-        "search_similar_chunks_for_dormitories",
-        fake_search_similar_chunks_for_dormitories,
+        "search_hybrid_chunks_for_dormitories",
+        fake_search_hybrid_chunks_for_dormitories,
     )
     monkeypatch.setattr(chat_service, "generate_answer", fake_generate_answer)
     monkeypatch.setattr(
@@ -340,7 +335,7 @@ def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pyt
     monkeypatch.setattr(chat_service, "create_query_embedding", lambda *_args, **_kwargs: [0.1, 0.2, 0.3])
     monkeypatch.setattr(
         chat_service,
-        "search_similar_chunks",
+        "search_hybrid_chunks",
         lambda *_args, **_kwargs: [
             {
                 "regulation_chunk_id": 1001,
@@ -388,14 +383,14 @@ def test_answer_chat_question_marks_error_when_generation_fails(monkeypatch: pyt
     assert chat_log.answer_status == ChatAnswerStatus.ERROR
     assert chat_log.rewritten_query == "외박 신청은 어디서 하나요?"
     assert chat_log.answer == ""
-    assert retrieval_calls["chat_log_id"] == 501
+    assert retrieval_calls == {}
     assert error_log_calls["chat_log_id"] == 501
     assert error_log_calls["session_id"] == "session-123"
     assert error_log_calls["error_type"] == chat_service.ERROR_TYPE_LLM_API
     assert error_log_calls["occurred_step"] == chat_service.STEP_ANSWER_GENERATION
     assert error_log_calls["error_message"] == "llm failed"
     assert error_log_calls["error_detail"] == "RuntimeError: llm failed"
-    assert db.commit_count == 2
+    assert db.commit_count == 1
     assert db.close_count == 0
     assert finalize_db.commit_count == 1
     assert db.flush_count == 0

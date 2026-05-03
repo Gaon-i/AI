@@ -74,10 +74,6 @@ def resolve_room_floor_question(
             answer=f"{dormitory}의 호실 층수 정보를 확인할 수 없습니다."
         )
 
-    if room_number >= 1000:
-        return RoomFloorResult(
-            answer=f"{dormitory}에서 {room_number}호에 대한 층수 정보는 확인되지 않습니다."
-        )
 
     for start, end, floor in ranges:
         if start <= room_number <= end:
@@ -103,7 +99,8 @@ def _looks_like_room_floor_question(question: str) -> bool:
 
 
 def _extract_room_number(question: str) -> Optional[int]:
-    match = re.search(r"(\d{3,4})\s*호", question)
+    compact_question = question.replace(" ", "")
+    match = re.search(r"(?<!\d)(\d{3,4})호", compact_question)
     if not match:
         return None
 

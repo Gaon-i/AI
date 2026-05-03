@@ -413,6 +413,21 @@ def _answer_unspecified_dormitory_chat(
             dormitories=settings.chat_grouped_dormitories,
             top_k=settings.chat_grouped_dormitory_top_k,
         )
+
+        print("===== GROUPED SEARCH DEBUG =====")
+        print("question:", question)
+        print("chunks_count:", len(chunks))
+        for index, chunk in enumerate(chunks, start=1):
+            print(
+                index,
+                chunk.get("document_id"),
+                chunk.get("dormitory"),
+                chunk.get("similarity"),
+                chunk.get("source"),
+                (chunk.get("content") or "")[:300],
+            )
+        print("================================")
+
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,
@@ -702,7 +717,11 @@ def _get_query_expansion_rerank_keywords(question: str, expanded_query: str) -> 
     "라면먹",
     "라면먹어",
     "라면먹어도",
+    "라면 먹어",
+    "라면 먹어도"
     "방에서라면",
+    "방에서 라면",
+    "끓여 먹"
     "끓여먹",
     "끓여",
     "취사",
@@ -711,11 +730,12 @@ def _get_query_expansion_rerank_keywords(question: str, expanded_query: str) -> 
     "해먹",
     "음식해",
     "음식해먹",
+    "음식 해먹"
     "전기포트",
     "라면포트",
     "에어프라이어",
     "커피포트",
-]
+    ]
 
     if any(trigger in text for trigger in cooking_triggers):
         return [
@@ -812,7 +832,11 @@ def _should_pre_expand_query(question: str) -> bool:
     "라면먹",
     "라면먹어",
     "라면먹어도",
+    "라면 먹어",
+    "라면 먹어도"
     "방에서라면",
+    "방에서 라면",
+    "끓여 먹"
     "끓여먹",
     "끓여",
     "취사",
@@ -821,11 +845,12 @@ def _should_pre_expand_query(question: str) -> bool:
     "해먹",
     "음식해",
     "음식해먹",
+    "음식 해먹"
     "전기포트",
     "라면포트",
     "에어프라이어",
     "커피포트",
-]
+    ]
 
     if any(trigger in compact_question for trigger in cooking_triggers):
         return True

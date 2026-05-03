@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     chat_no_answer_message: str = "관련 정보를 찾을 수 없습니다."
     chat_invalid_question_message: str = "기숙사 관련 질문을 입력해주세요."
     chat_single_dormitory_top_k: int = 3
-    chat_grouped_dormitory_top_k: int = 2
+    chat_grouped_dormitory_top_k: int = 3
     chat_grouped_dormitories: list[str] = ["제1학생생활관", "제2학생생활관", "제3학생생활관"]
     regulation_chunk_max_length: int = 400
     chat_session_timeout_minutes: int = 30

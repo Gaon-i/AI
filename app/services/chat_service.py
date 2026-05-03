@@ -741,20 +741,20 @@ def _should_pre_expand_query(question: str) -> bool:
     compact_question = question.replace(" ", "")
 
     curfew_triggers = [
-    "통금",
-    "몇시까지들어",
-    "몇시까지입실",
-    "언제까지들어",
-    "새벽에들어",
-    "새벽에도들어",
-    "새벽2시에들어",
-    "새벽1시에들어",
-    "들어가도돼",
-    "출입가능",
-    "문닫",
-    "문열",
-    "폐문",
-    "개문",
+        "통금",
+        "몇시까지들어",
+        "몇시까지입실",
+        "언제까지들어",
+        "새벽에들어",
+        "새벽에도들어",
+        "새벽2시에들어",
+        "새벽1시에들어",
+        "들어가도돼",
+        "출입가능",
+        "문닫",
+        "문열",
+        "폐문",
+        "개문",
     ]
 
     if (
@@ -776,7 +776,6 @@ def _should_pre_expand_query(question: str) -> bool:
     if any(trigger in compact_question for trigger in eating_place_triggers):
         return True
 
-
     microwave_triggers = [
         "전자레인지",
         "전자렌지",
@@ -787,6 +786,28 @@ def _should_pre_expand_query(question: str) -> bool:
 
     if any(trigger in compact_question for trigger in microwave_triggers):
         return True
-    
+
+    cooking_triggers = [
+        "라면끓",
+        "라면먹",
+        "끓여먹",
+        "끓여",
+        "방에서라면",
+        "취사",
+        "조리",
+        "요리",
+        "해먹",
+        "해먹어",
+        "해먹어도",
+        "음식해",
+        "음식해먹",
+        "전기포트",
+        "라면포트",
+        "에어프라이어",
+        "커피포트",
+    ]
+
+    if any(trigger in compact_question for trigger in cooking_triggers):
+        return True
 
     return False

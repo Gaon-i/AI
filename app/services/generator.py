@@ -211,6 +211,7 @@ def _parse_generation_output(
 def _strip_json_code_block(raw_output: str) -> str:
     text = raw_output.strip()
 
+    # LLM이 ```json ... ``` 코드블록으로 감싼 경우 우선 제거
     if text.startswith("```json"):
         text = text.removeprefix("```json").strip()
     elif text.startswith("```"):
@@ -218,6 +219,11 @@ def _strip_json_code_block(raw_output: str) -> str:
 
     if text.endswith("```"):
         text = text.removesuffix("```").strip()
+
+    # 앞뒤 설명이 섞여도 JSON 객체 부분만 추출
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        return match.group(0).strip()
 
     return text
 

@@ -105,6 +105,7 @@ def expand_query_for_retrieval(
             messages=[
                 {"role": "user", "content": prompt},
             ],
+            timeout=settings.openai_timeout_seconds,
         )
 
         expanded_query = response.choices[0].message.content.strip()

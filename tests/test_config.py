@@ -10,6 +10,6 @@ def test_settings_from_environment() -> None:
     assert settings.database_url == "sqlite+pysqlite:///:memory:"
     assert settings.chat_answer_model == "gpt-4o-mini"
     assert settings.chat_single_dormitory_top_k == 3
-    assert settings.chat_grouped_dormitory_top_k == 2
+    assert settings.chat_grouped_dormitory_top_k == 3
     assert settings.chat_grouped_dormitories == ["제1학생생활관", "제2학생생활관", "제3학생생활관"]
     assert settings.regulation_chunk_max_length == 400

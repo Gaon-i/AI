@@ -332,7 +332,6 @@ def _answer_single_dormitory_chat(
         raise
 
     db.commit()
-    db.close()
 
     final_answer_status = ChatAnswerStatus.SUCCESS
     final_source_url = answer_result.source_url or ""

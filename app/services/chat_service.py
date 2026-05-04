@@ -28,10 +28,12 @@ from app.repositories.regulation_chunk_repository import search_hybrid_chunks_fo
 from app.schemas.chat import ChatRequest
 from app.schemas.chat import ChatResponse
 from app.services.embeddings import create_query_embedding
+from app.services.generator import AnswerGenerationResult
 from app.services.generator import generate_answer
 from app.services.validator import validate_question
 from app.services.query_rewriter import expand_query_for_retrieval
-
+from app.repositories.regulation_chunk_repository import search_similar_chunks_all_dormitories
+from app.services.room_floor_resolver import resolve_room_floor_question
 
 ERROR_TYPE_TIMEOUT = "TIMEOUT"
 ERROR_TYPE_LLM_API = "LLM_API_ERROR"
@@ -104,6 +106,26 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
                 model_name=None,
                 prompt_version=None,
                 retrieval_version=None,
+                response_time_ms=_elapsed_ms(started_at),
+            )
+        
+        room_floor_result = resolve_room_floor_question(
+            normalized_question,
+            payload.dormitory,
+        )
+
+        if room_floor_result is not None:
+            return _finalize_chat_log(
+                db,
+                chat_log_id=chat_log_id,
+                session_id=payload.session_id,
+                answer_status=ChatAnswerStatus.SUCCESS,
+                answer=room_floor_result.answer,
+                source_url=room_floor_result.source_url,
+                rewritten_query=normalized_question,
+                model_name=None,
+                prompt_version=None,
+                retrieval_version="room-floor-rule-v1",
                 response_time_ms=_elapsed_ms(started_at),
             )
 
@@ -395,6 +417,8 @@ def _answer_unspecified_dormitory_chat(
             dormitories=settings.chat_grouped_dormitories,
             top_k=settings.chat_grouped_dormitory_top_k,
         )
+
+
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,
@@ -403,23 +427,17 @@ def _answer_unspecified_dormitory_chat(
         )
         raise
 
-    if not chunks:
-        return _finalize_chat_log(
-            db,
-            chat_log_id=chat_log_id,
-            session_id=session_id,
-            answer_status=ChatAnswerStatus.NO_ANSWER,
-            answer=settings.chat_no_answer_message,
-            source_url="",
-            rewritten_query=rewritten_query,
-            model_name=None,
-            prompt_version=None,
-            retrieval_version=retrieval_version,
-            response_time_ms=_elapsed_ms(started_at),
-        )
 
+    
     try:
-        answer_result = generate_answer(question, chunks)
+        if chunks:
+            answer_result = generate_answer(question, chunks)
+        else:
+            answer_result = AnswerGenerationResult(
+                answer=settings.chat_no_answer_message,
+                source_url="",
+                cited_regulation_chunk_ids=[],
+            )
 
         # 비로그인/생활관 미지정 상태에서 원문 검색으로 답변을 못 만들면
         # query expansion으로 검색용 질의를 확장한 뒤 전체 생활관 대상으로 재검색
@@ -428,6 +446,7 @@ def _answer_unspecified_dormitory_chat(
                 question=question,
                 dormitory=None,
             )
+            
 
             if expanded_query != question:
                 expanded_query_embedding = create_query_embedding(expanded_query)
@@ -690,16 +709,23 @@ def _get_query_expansion_rerank_keywords(question: str, expanded_query: str) -> 
 
     cooking_triggers = [
     "라면끓",
+    "라면먹",
+    "라면먹어",
+    "라면먹어도",
+    "라면 먹어",
+    "라면 먹어도"
+    "방에서라면",
+    "방에서 라면",
+    "끓여 먹"
     "끓여먹",
     "끓여",
     "취사",
     "조리",
     "요리",
     "해먹",
-    "해먹어",
-    "해먹어도",
     "음식해",
     "음식해먹",
+    "음식 해먹"
     "전기포트",
     "라면포트",
     "에어프라이어",
@@ -795,24 +821,30 @@ def _should_pre_expand_query(question: str) -> bool:
     if any(trigger in compact_question for trigger in microwave_triggers):
         return True
 
+
     cooking_triggers = [
-        "라면끓",
-        "라면먹",
-        "끓여먹",
-        "끓여",
-        "방에서라면",
-        "취사",
-        "조리",
-        "요리",
-        "해먹",
-        "해먹어",
-        "해먹어도",
-        "음식해",
-        "음식해먹",
-        "전기포트",
-        "라면포트",
-        "에어프라이어",
-        "커피포트",
+    "라면끓",
+    "라면먹",
+    "라면먹어",
+    "라면먹어도",
+    "라면 먹어",
+    "라면 먹어도",
+    "방에서라면",
+    "방에서 라면",
+    "끓여 먹"
+    "끓여먹",
+    "끓여",
+    "취사",
+    "조리",
+    "요리",
+    "해먹",
+    "음식해",
+    "음식해먹",
+    "음식 해먹"
+    "전기포트",
+    "라면포트",
+    "에어프라이어",
+    "커피포트",
     ]
 
     if any(trigger in compact_question for trigger in cooking_triggers):

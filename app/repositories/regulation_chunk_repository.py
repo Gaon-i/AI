@@ -3,6 +3,7 @@
 import hashlib
 from datetime import datetime
 from datetime import timezone
+from typing import Optional
 from uuid import uuid4
 
 from sqlalchemy import func
@@ -16,6 +17,23 @@ from app.core.error_codes import INVALID_EMBEDDING_RESPONSE
 from app.core.exceptions import AppException
 from app.db.models.regulation_document import RegulationDocument
 from app.db.models.regulation_chunk import RegulationChunk
+
+
+def _build_search_vector_text(
+    chunk_text: Optional[str],
+    document_content: Optional[str],
+    keywords: Optional[list[str]],
+) -> str:
+    keyword_text = " ".join(keywords or [])
+    return " ".join(
+        part
+        for part in [
+            chunk_text or "",
+            document_content or "",
+            keyword_text,
+        ]
+        if part
+    )
 
 
 def create_regulation_chunks_for_document(
@@ -44,6 +62,14 @@ def create_regulation_chunks_for_document(
             chunk_index=index - 1,
             chunk_text=chunk_text,
             keywords=regulation_document.keywords,
+            search_tsvector=func.to_tsvector(
+                "simple",
+                _build_search_vector_text(
+                    chunk_text=chunk_text,
+                    document_content=regulation_document.content,
+                    keywords=regulation_document.keywords,
+                ),
+            ),
             chunk_hash=hashlib.sha256(chunk_text.encode("utf-8")).hexdigest(),
             embedding_model=settings.openai_embedding_model,
             embedding=embedding,
@@ -53,43 +79,9 @@ def create_regulation_chunks_for_document(
         created_chunks.append(regulation_chunk)
 
     db.flush()
-    refresh_search_vectors_for_chunks(
-        db,
-        [
-            regulation_chunk.regulation_chunk_id
-            for regulation_chunk in created_chunks
-            if regulation_chunk.regulation_chunk_id is not None
-        ],
-    )
     for regulation_chunk in created_chunks:
         db.refresh(regulation_chunk)
     return created_chunks
-
-
-def refresh_search_vectors_for_chunks(db: Session, regulation_chunk_ids: list[int]) -> int:
-    """저장된 청크 검색 텍스트를 tsvector 컬럼에 반영합니다."""
-
-    if not regulation_chunk_ids:
-        return 0
-
-    result = db.execute(
-        text(
-            """
-            UPDATE regulation_chunk AS rc
-            SET search_tsvector = to_tsvector(
-                'simple',
-                COALESCE(rc.chunk_text, '') || ' ' ||
-                COALESCE(rd.content, '') || ' ' ||
-                COALESCE(rc.keywords::text, '')
-            )
-            FROM regulation_document AS rd
-            WHERE rd.regulation_document_id = rc.regulation_document_id
-              AND rc.regulation_chunk_id = ANY(:regulation_chunk_ids)
-            """
-        ),
-        {"regulation_chunk_ids": regulation_chunk_ids},
-    )
-    return result.rowcount or 0
 
 
 def deactivate_chunks_for_document(db: Session, regulation_document_id: int) -> int:

@@ -270,6 +270,66 @@ def test_answer_chat_question_uses_top_scored_chunks_when_dormitory_is_missing(
     assert chat_log.retrieval_version == settings.chat_retrieval_version_grouped
 
 
+def test_answer_chat_question_returns_room_floor_without_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = FakeSession()
+    chat_session = _build_chat_session()
+    chat_log = _build_chat_log()
+
+    monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (True, "401호 몇 층이야?"))
+    monkeypatch.setattr(
+        chat_service,
+        "create_query_embedding",
+        lambda *_args, **_kwargs: pytest.fail("room floor question should not create embeddings"),
+    )
+    monkeypatch.setattr(
+        chat_service,
+        "search_similar_chunks",
+        lambda *_args, **_kwargs: pytest.fail("room floor question should not search chunks"),
+    )
+    monkeypatch.setattr(
+        chat_service,
+        "search_similar_chunks_for_dormitories",
+        lambda *_args, **_kwargs: pytest.fail("room floor question should not search grouped chunks"),
+    )
+    monkeypatch.setattr(
+        chat_service,
+        "generate_answer",
+        lambda *_args, **_kwargs: pytest.fail("room floor question should not call answer generation"),
+    )
+    monkeypatch.setattr(
+        chat_service,
+        "create_chat_retrieval_results",
+        lambda *_args, **_kwargs: pytest.fail("room floor question should not save retrieval results"),
+    )
+
+    response = chat_service.answer_chat_question(
+        db,
+        ChatRequest(
+            session_id="session-123",
+            question="401호 몇 층이야?",
+            dormitory="제1학생생활관",
+        ),
+    )
+
+    assert response.chat_log_id == 501
+    assert response.session_id == "session-123"
+    assert response.answer == "401호는 제1학생생활관 지상 4층에 위치합니다."
+    assert response.answer_status == "SUCCESS"
+    assert response.source_url == ""
+    assert chat_log.answer_status == ChatAnswerStatus.SUCCESS
+    assert chat_log.rewritten_query == "401호 몇 층이야?"
+    assert chat_log.model_name is None
+    assert chat_log.prompt_version is None
+    assert chat_log.retrieval_version == "room-floor-rule-v1"
+    assert db.commit_count == 2
+    assert db.close_count == 0
+    assert db.rollback_count == 0
+
+
 def test_answer_chat_question_returns_no_answer_for_invalid_question(monkeypatch: pytest.MonkeyPatch) -> None:
     db = FakeSession()
     chat_session = _build_chat_session()

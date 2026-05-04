@@ -25,6 +25,9 @@ from app.repositories.chat_retrieval_result_repository import mark_chat_retrieva
 from app.repositories.regulation_chunk_repository import search_hybrid_chunks
 from app.repositories.regulation_chunk_repository import search_hybrid_chunks_all_dormitories
 from app.repositories.regulation_chunk_repository import search_hybrid_chunks_for_dormitories
+from app.repositories.regulation_chunk_repository import search_similar_chunks
+from app.repositories.regulation_chunk_repository import search_similar_chunks_for_dormitories
+from app.repositories.regulation_chunk_repository import search_similar_chunks_all_dormitories
 from app.schemas.chat import ChatRequest
 from app.schemas.chat import ChatResponse
 from app.services.embeddings import create_query_embedding
@@ -32,7 +35,6 @@ from app.services.generator import AnswerGenerationResult
 from app.services.generator import generate_answer
 from app.services.validator import validate_question
 from app.services.query_rewriter import expand_query_for_retrieval
-from app.repositories.regulation_chunk_repository import search_similar_chunks_all_dormitories
 from app.services.room_floor_resolver import resolve_room_floor_question
 
 ERROR_TYPE_TIMEOUT = "TIMEOUT"
@@ -274,10 +276,13 @@ def _answer_single_dormitory_chat(
         # 전체 생활관 fallback까지 했는데도 답변을 못 만들면
         # LLM query expansion으로 검색용 질의를 확장한 뒤 재검색
         if _is_no_answer(answer_result.answer):
-            expanded_query = expand_query_for_retrieval(
-                question=question,
-                dormitory=dormitory,
-            )
+            if rewritten_query != question:
+                expanded_query = rewritten_query
+            else:
+                expanded_query = expand_query_for_retrieval(
+                    question=question,
+                    dormitory=dormitory,
+                )
 
             if expanded_query != question:
                 expanded_query_embedding = create_query_embedding(expanded_query)
@@ -442,10 +447,13 @@ def _answer_unspecified_dormitory_chat(
         # 비로그인/생활관 미지정 상태에서 원문 검색으로 답변을 못 만들면
         # query expansion으로 검색용 질의를 확장한 뒤 전체 생활관 대상으로 재검색
         if _is_no_answer(answer_result.answer):
-            expanded_query = expand_query_for_retrieval(
-                question=question,
-                dormitory=None,
-            )
+            if rewritten_query != question:
+                expanded_query = rewritten_query
+            else:
+                expanded_query = expand_query_for_retrieval(
+                    question=question,
+                    dormitory=None,
+                )
             
 
             if expanded_query != question:

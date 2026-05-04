@@ -284,11 +284,14 @@ def _answer_single_dormitory_chat(
                 rewritten_query = expanded_query
 
                 # 1차: 확장 query로 사용자 dormitory + 공통 문서 검색
-                expanded_chunks = search_similar_chunks(
+                expanded_chunks = search_hybrid_chunks(
                     db=db,
+                    query_text=expanded_query,
                     query_embedding=expanded_query_embedding,
                     dormitory=dormitory,
                     top_k=settings.chat_single_dormitory_top_k,
+                    candidate_k=20,
+                    keyword_weight=0.3,
                 )
 
 
@@ -308,8 +311,9 @@ def _answer_single_dormitory_chat(
                 # 확장 query + 사용자 dormitory 검색으로도 답변이 부족하면
                 # 확장 query + 전체 생활관 검색을 반드시 한 번 더 수행
                 if _is_no_answer(answer_result.answer):
-                    expanded_all_chunks = search_similar_chunks_all_dormitories(
+                    expanded_all_chunks = search_hybrid_chunks_all_dormitories(
                         db=db,
+                        query_text=expanded_query,
                         query_embedding=expanded_query_embedding,
                         top_k=settings.chat_fallback_top_k,
                     )
@@ -452,8 +456,9 @@ def _answer_unspecified_dormitory_chat(
                 expanded_query_embedding = create_query_embedding(expanded_query)
                 rewritten_query = expanded_query
 
-                expanded_chunks = search_similar_chunks_for_dormitories(
+                expanded_chunks = search_hybrid_chunks_for_dormitories(
                     db=db,
+                    query_text=expanded_query,
                     query_embedding=expanded_query_embedding,
                     dormitories=settings.chat_grouped_dormitories,
                     top_k=settings.chat_fallback_top_k,
@@ -713,10 +718,10 @@ def _get_query_expansion_rerank_keywords(question: str, expanded_query: str) -> 
     "라면먹어",
     "라면먹어도",
     "라면 먹어",
-    "라면 먹어도"
+    "라면 먹어도",
     "방에서라면",
     "방에서 라면",
-    "끓여 먹"
+    "끓여 먹",
     "끓여먹",
     "끓여",
     "취사",
@@ -831,7 +836,7 @@ def _should_pre_expand_query(question: str) -> bool:
     "라면 먹어도",
     "방에서라면",
     "방에서 라면",
-    "끓여 먹"
+    "끓여 먹",
     "끓여먹",
     "끓여",
     "취사",

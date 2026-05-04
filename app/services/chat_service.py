@@ -414,19 +414,6 @@ def _answer_unspecified_dormitory_chat(
             top_k=settings.chat_grouped_dormitory_top_k,
         )
 
-        print("===== GROUPED SEARCH DEBUG =====")
-        print("question:", question)
-        print("chunks_count:", len(chunks))
-        for index, chunk in enumerate(chunks, start=1):
-            print(
-                index,
-                chunk.get("document_id"),
-                chunk.get("dormitory"),
-                chunk.get("similarity"),
-                chunk.get("source"),
-                (chunk.get("content") or "")[:300],
-            )
-        print("================================")
 
     except Exception as exc:
         _attach_chat_error_metadata(
@@ -833,7 +820,7 @@ def _should_pre_expand_query(question: str) -> bool:
     "라면먹어",
     "라면먹어도",
     "라면 먹어",
-    "라면 먹어도"
+    "라면 먹어도",
     "방에서라면",
     "방에서 라면",
     "끓여 먹"

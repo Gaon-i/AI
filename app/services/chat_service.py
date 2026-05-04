@@ -22,8 +22,9 @@ from app.repositories.chat_log_repository import touch_chat_session_activity
 from app.repositories.chat_log_repository import update_chat_log_result
 from app.repositories.chat_retrieval_result_repository import create_chat_retrieval_results
 from app.repositories.chat_retrieval_result_repository import mark_chat_retrieval_results_used_in_answer
-from app.repositories.regulation_chunk_repository import search_similar_chunks
-from app.repositories.regulation_chunk_repository import search_similar_chunks_for_dormitories
+from app.repositories.regulation_chunk_repository import search_hybrid_chunks
+from app.repositories.regulation_chunk_repository import search_hybrid_chunks_all_dormitories
+from app.repositories.regulation_chunk_repository import search_hybrid_chunks_for_dormitories
 from app.schemas.chat import ChatRequest
 from app.schemas.chat import ChatResponse
 from app.services.embeddings import create_query_embedding
@@ -31,8 +32,6 @@ from app.services.generator import AnswerGenerationResult
 from app.services.generator import generate_answer
 from app.services.validator import validate_question
 from app.services.query_rewriter import expand_query_for_retrieval
-
-
 from app.repositories.regulation_chunk_repository import search_similar_chunks_all_dormitories
 from app.services.room_floor_resolver import resolve_room_floor_question
 
@@ -193,17 +192,21 @@ def _answer_single_dormitory_chat(
 
         query_embedding = create_query_embedding(retrieval_query)
 
-        chunks = search_similar_chunks(
+        chunks = search_hybrid_chunks(
             db=db,
+            query_text=question,
             query_embedding=query_embedding,
             dormitory=dormitory,
             top_k=settings.chat_single_dormitory_top_k,
+            candidate_k=20,
+            keyword_weight=0.3,
         )
 
         # 1차 검색 결과가 없거나 유사도가 낮으면 전체 생활관 fallback 검색
         if _should_fallback_retrieval(chunks):
-            chunks = search_similar_chunks_all_dormitories(
+            chunks = search_hybrid_chunks_all_dormitories(
                 db=db,
+                query_text=question,
                 query_embedding=query_embedding,
                 top_k=settings.chat_fallback_top_k,
             )
@@ -248,8 +251,9 @@ def _answer_single_dormitory_chat(
             _is_no_answer(answer_result.answer)
             and retrieval_method != settings.chat_retrieval_method_fallback
         ):
-            fallback_chunks = search_similar_chunks_all_dormitories(
+            fallback_chunks = search_hybrid_chunks_all_dormitories(
                 db=db,
+                query_text=question,
                 query_embedding=query_embedding,
                 top_k=settings.chat_fallback_top_k,
             )
@@ -348,7 +352,6 @@ def _answer_single_dormitory_chat(
         raise
 
     db.commit()
-    db.close()
 
     final_answer_status = ChatAnswerStatus.SUCCESS
     final_source_url = answer_result.source_url or ""
@@ -407,8 +410,9 @@ def _answer_unspecified_dormitory_chat(
         raise
 
     try:
-        chunks = search_similar_chunks_for_dormitories(
+        chunks = search_hybrid_chunks_for_dormitories(
             db=db,
+            query_text=question,
             query_embedding=query_embedding,
             dormitories=settings.chat_grouped_dormitories,
             top_k=settings.chat_grouped_dormitory_top_k,
@@ -499,7 +503,6 @@ def _answer_unspecified_dormitory_chat(
         raise
 
     db.commit()
-    db.close()
 
     final_answer_status = ChatAnswerStatus.SUCCESS
     final_source_url = answer_result.source_url or ""
@@ -686,11 +689,16 @@ def _should_fallback_retrieval(chunks: list[dict]) -> bool:
     if not chunks:
         return True
 
-    top_similarity = chunks[0].get("similarity")
-    if top_similarity is None:
+    top_vector_score = chunks[0].get("vector_score")
+    if top_vector_score is None:
+        top_vector_score = chunks[0].get("vector_similarity")
+    if top_vector_score is None:
+        top_vector_score = chunks[0].get("similarity")
+    if top_vector_score is None:
         return True
 
-    return float(top_similarity) < settings.chat_fallback_similarity_threshold
+
+    return float(top_vector_score) < settings.chat_fallback_similarity_threshold
 
 def _is_no_answer(answer: str) -> bool:
     settings = get_settings()

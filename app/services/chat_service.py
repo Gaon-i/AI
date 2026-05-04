@@ -423,6 +423,7 @@ def _answer_unspecified_dormitory_chat(
         )
 
 
+
     except Exception as exc:
         _attach_chat_error_metadata(
             exc,

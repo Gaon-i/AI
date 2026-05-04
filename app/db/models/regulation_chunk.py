@@ -5,6 +5,7 @@ from typing import Optional
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy import func
 from sqlalchemy import text
 from sqlalchemy.orm import Mapped, mapped_column
@@ -20,6 +21,7 @@ class RegulationChunk(Base):
         Index("idx_regulation_chunk_document_version", "document_version"),
         Index("idx_regulation_chunk_chunk_id", "chunk_id"),
         Index("idx_regulation_chunk_is_active", "is_active"),
+        Index("idx_regulation_chunk_search_tsvector", "search_tsvector", postgresql_using="gin"),
     )
 
     regulation_chunk_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -33,6 +35,7 @@ class RegulationChunk(Base):
     chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
     chunk_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     keywords: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
+    search_tsvector: Mapped[Optional[str]] = mapped_column(TSVECTOR, nullable=True)
     embedding: Mapped[Optional[List[float]]] = mapped_column(Vector(1536), nullable=True)
     chunk_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     embedding_model: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

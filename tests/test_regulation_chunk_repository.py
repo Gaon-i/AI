@@ -42,6 +42,7 @@ def test_create_regulation_chunks_for_document_maps_document_fields_to_model() -
         regulation_document_id=7,
         document_id="dorm-rule-001",
         document_version="2026.04",
+        content="생활관 외박 신청은 통합 포털에서 처리한다.",
         keywords=["외박", "외출"],
     )
     regulation_chunk_repository.get_settings = lambda: SimpleNamespace(
@@ -61,10 +62,11 @@ def test_create_regulation_chunks_for_document_maps_document_fields_to_model() -
     assert regulation_chunk.regulation_document_id == 7
     assert regulation_chunk.document_version == "2026.04"
     assert regulation_chunk.keywords == ["외박", "외출"]
+    assert "to_tsvector" in str(regulation_chunk.search_tsvector)
     assert regulation_chunk.embedding_model == "text-embedding-3-small"
     assert db.flush_called is True
-    assert db.executed_params == [{"regulation_chunk_ids": [1]}]
-    assert "search_tsvector = to_tsvector" in str(db.executed_statements[0])
+    assert db.executed_params == []
+    assert db.executed_statements == []
     assert db.refresh_called_values == [regulation_chunk]
 
 
@@ -74,6 +76,7 @@ def test_create_regulation_chunks_for_document_rejects_embedding_count_mismatch(
         regulation_document_id=7,
         document_id="dorm-rule-001",
         document_version="2026.04",
+        content="생활관 외박 신청은 통합 포털에서 처리한다.",
         keywords=["외박", "외출"],
     )
     regulation_chunk_repository.get_settings = lambda: SimpleNamespace(
@@ -188,24 +191,13 @@ def test_search_hybrid_chunks_for_dormitories_passes_dormitory_list() -> None:
     assert executed_params[0]["dormitories"] == ["제1학생생활관", "제2학생생활관"]
 
 
-def test_refresh_search_vectors_for_chunks_updates_tsvector_from_document_content() -> None:
-    executed_statements: list[object] = []
-    executed_params: list[dict] = []
-
-    class RefreshSession:
-        def execute(self, statement, params):
-            executed_statements.append(statement)
-            executed_params.append(params)
-            return SimpleNamespace(rowcount=2)
-
-    result = regulation_chunk_repository.refresh_search_vectors_for_chunks(
-        RefreshSession(),
-        [10, 11],
+def test_build_search_vector_text_joins_keywords_without_json_syntax() -> None:
+    result = regulation_chunk_repository._build_search_vector_text(
+        chunk_text="외박 신청",
+        document_content="통합 포털에서 신청합니다.",
+        keywords=["외박", "외출"],
     )
 
-    executed_sql = str(executed_statements[0])
-    assert result == 2
-    assert "UPDATE regulation_chunk AS rc" in executed_sql
-    assert "search_tsvector = to_tsvector" in executed_sql
-    assert "COALESCE(rd.content, '')" in executed_sql
-    assert executed_params == [{"regulation_chunk_ids": [10, 11]}]
+    assert result == "외박 신청 통합 포털에서 신청합니다. 외박 외출"
+    assert "[" not in result
+    assert "]" not in result

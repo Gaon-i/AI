@@ -265,6 +265,86 @@ def test_answer_chat_question_uses_top_scored_chunks_when_dormitory_is_missing(
     assert chat_log.retrieval_version == settings.chat_retrieval_version_grouped
 
 
+def test_answer_chat_question_reuses_pre_expanded_embedding_for_grouped_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = FakeSession()
+    finalize_db = FakeSession()
+    chat_session = _build_chat_session()
+    chat_log = _build_chat_log()
+    embedding_queries: list[str] = []
+    fallback_embeddings: list[list[float]] = []
+    generate_call_count = 0
+
+    monkeypatch.setattr(chat_service, "get_chat_session", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "create_chat_log", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "get_chat_log_by_id", lambda *_args, **_kwargs: chat_log)
+    monkeypatch.setattr(chat_service, "touch_chat_session_activity", lambda *_args, **_kwargs: chat_session)
+    monkeypatch.setattr(chat_service, "get_session_factory", lambda: (lambda: finalize_db))
+    monkeypatch.setattr(chat_service, "validate_question", lambda *_args, **_kwargs: (True, "통금"))
+    monkeypatch.setattr(chat_service, "expand_query_for_retrieval", lambda *_args, **_kwargs: "통금 시간 귀가 제한")
+
+    def fake_create_query_embedding(query: str) -> list[float]:
+        embedding_queries.append(query)
+        return [0.4, 0.5, 0.6]
+
+    def fake_generate_answer(_question, _chunks):
+        nonlocal generate_call_count
+        generate_call_count += 1
+        if generate_call_count == 1:
+            return AnswerGenerationResult(
+                answer="관련 정보를 찾을 수 없습니다.",
+                source_url="",
+                cited_regulation_chunk_ids=[],
+            )
+        return AnswerGenerationResult(
+            answer="통금은 생활관별 규정을 확인해야 합니다.",
+            source_url="https://example.com/rules",
+            cited_regulation_chunk_ids=[1001],
+        )
+
+    monkeypatch.setattr(chat_service, "create_query_embedding", fake_create_query_embedding)
+
+    def fake_search_hybrid_chunks_for_dormitories(*_args, **kwargs):
+        if kwargs["query_text"] != "통금":
+            fallback_embeddings.append(kwargs["query_embedding"])
+        return [
+            {
+                "regulation_chunk_id": 1001,
+                "document_id": "curfew",
+                "document_version": "v1",
+                "chunk_id": "chunk-1",
+                "content": "통금 시간 안내",
+                "source": "생활관 규정집",
+                "source_url": "https://example.com/rules",
+                "similarity": 0.6,
+                "retrieval_group": "제1학생생활관",
+            }
+        ]
+
+    monkeypatch.setattr(
+        chat_service,
+        "search_hybrid_chunks_for_dormitories",
+        fake_search_hybrid_chunks_for_dormitories,
+    )
+    monkeypatch.setattr(chat_service, "generate_answer", fake_generate_answer)
+    monkeypatch.setattr(chat_service, "create_chat_retrieval_results", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(chat_service, "mark_chat_retrieval_results_used_in_answer", lambda *_args, **_kwargs: [])
+
+    response = chat_service.answer_chat_question(
+        db,
+        ChatRequest(
+            session_id="session-123",
+            question="통금",
+        ),
+    )
+
+    assert response.answer_status == "SUCCESS"
+    assert embedding_queries == ["통금 시간 귀가 제한"]
+    assert fallback_embeddings == [[0.4, 0.5, 0.6]]
+    assert chat_log.rewritten_query == "통금 시간 귀가 제한"
+
+
 def test_answer_chat_question_returns_room_floor_without_retrieval(monkeypatch: pytest.MonkeyPatch) -> None:
     db = FakeSession()
     chat_session = _build_chat_session()

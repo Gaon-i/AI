@@ -285,7 +285,10 @@ def _answer_single_dormitory_chat(
                 )
 
             if expanded_query != question:
-                expanded_query_embedding = create_query_embedding(expanded_query)
+                if expanded_query == retrieval_query:
+                    expanded_query_embedding = query_embedding
+                else:
+                    expanded_query_embedding = create_query_embedding(expanded_query)
                 rewritten_query = expanded_query
 
                 # 1차: 확장 query로 사용자 dormitory + 공통 문서 검색
@@ -485,7 +488,10 @@ def _answer_unspecified_dormitory_chat(
             
 
             if expanded_query != question:
-                expanded_query_embedding = create_query_embedding(expanded_query)
+                if expanded_query == retrieval_query:
+                    expanded_query_embedding = query_embedding
+                else:
+                    expanded_query_embedding = create_query_embedding(expanded_query)
                 rewritten_query = expanded_query
 
                 expanded_chunks = search_hybrid_chunks_for_dormitories(

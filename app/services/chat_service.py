@@ -422,13 +422,18 @@ def _answer_unspecified_dormitory_chat(
         raise
 
     try:
+
+        print("should each dorm:", _should_search_each_dormitory(question))
+        print("question:", question)
+
+
         if _should_search_each_dormitory(question):
             chunks = _search_chunks_by_each_dormitory(
                 db=db,
                 question=question,
                 query_embedding=query_embedding,
                 dormitories=settings.chat_grouped_dormitories,
-                top_k_per_dormitory=1,
+                top_k_per_dormitory=3,
             )
         else:
             chunks = search_hybrid_chunks_for_dormitories(
@@ -438,20 +443,18 @@ def _answer_unspecified_dormitory_chat(
                 dormitories=settings.chat_grouped_dormitories,
                 top_k=settings.chat_grouped_dormitory_top_k,
             )
-        
-        print("===== GROUPED SEARCH DEBUG =====")
-        print("question:", question)    
+            
+        print("===== FINAL EACH DORMITORY CHUNKS =====")
         print("chunks_count:", len(chunks))
         for index, chunk in enumerate(chunks, start=1):
             print(
                 index,
                 chunk.get("document_id"),
-                chunk.get("dormitory"),
-                chunk.get("similarity"),
                 chunk.get("source"),
-                (chunk.get("content") or "")[:300],
+                (chunk.get("content") or "")[:200],
             )
-        print("================================")
+        print("======================================")
+    
 
 
 
@@ -883,7 +886,7 @@ def _should_pre_expand_query(question: str) -> bool:
     "해먹",
     "음식해",
     "음식해먹",
-    "음식 해먹"
+    "음식 해먹",
     "전기포트",
     "라면포트",
     "에어프라이어",
@@ -896,25 +899,29 @@ def _should_pre_expand_query(question: str) -> bool:
     return False
 
 
+DORMITORY_SPECIFIC_SEARCH_TRIGGERS = [
+    "휴게실",
+    "다리미",
+    "편의점",
+    "전자레인지",
+    "전자렌지",
+    "정수기",
+    "세탁실",
+    "수용인원",
+    "몇명",
+    "몇명수용",
+    "호실수",
+]
+
+
 def _should_search_each_dormitory(question: str) -> bool:
     compact_question = question.replace(" ", "")
 
-    dormitory_specific_triggers = [
-        "휴게실",
-        "다리미",
-        "편의점",
-        "전자레인지",
-        "전자렌지",
-        "정수기",
-        "세탁실",
-        "탕비실",
-        "수용인원",
-        "몇명",
-        "몇명수용",
-        "호실수",
-    ]
+    return any(
+        trigger in compact_question
+        for trigger in DORMITORY_SPECIFIC_SEARCH_TRIGGERS
+    )
 
-    return any(trigger in compact_question for trigger in dormitory_specific_triggers)
 
 def _search_chunks_by_each_dormitory(
     db: Session,
@@ -922,7 +929,7 @@ def _search_chunks_by_each_dormitory(
     question: str,
     query_embedding: list[float],
     dormitories: list[str],
-    top_k_per_dormitory: int = 1,
+    top_k_per_dormitory: int = 3,
 ) -> list[dict]:
     merged_chunks: list[dict] = []
     seen_chunk_ids: set[int] = set()
@@ -938,7 +945,12 @@ def _search_chunks_by_each_dormitory(
             keyword_weight=0.3,
         )
 
-        for chunk in dormitory_chunks:
+        dormitory_chunks = _prefer_target_dormitory_chunks(
+            dormitory_chunks,
+            dormitory,
+        )
+
+        for chunk in dormitory_chunks[:1]:
             regulation_chunk_id = chunk.get("regulation_chunk_id")
 
             if regulation_chunk_id is not None:
@@ -949,3 +961,37 @@ def _search_chunks_by_each_dormitory(
             merged_chunks.append(chunk)
 
     return merged_chunks
+
+def _prefer_target_dormitory_chunks(
+    chunks: list[dict],
+    dormitory: str,
+) -> list[dict]:
+    def score(chunk: dict) -> tuple[int, int, float]:
+        text = " ".join(
+            [
+                str(chunk.get("dormitory") or ""),
+                str(chunk.get("title") or ""),
+                str(chunk.get("source") or ""),
+                str(chunk.get("content") or ""),
+            ]
+        )
+
+        source_type = str(chunk.get("source_type") or "")
+
+        dormitory_match_score = 1 if dormitory in text else 0
+        official_score = 1 if source_type == "official" else 0
+
+        similarity = float(
+            chunk.get("similarity")
+            or chunk.get("vector_score")
+            or chunk.get("vector_similarity")
+            or 0.0
+        )
+
+        return (
+            dormitory_match_score,
+            official_score,
+            similarity,
+        )
+
+    return sorted(chunks, key=score, reverse=True)

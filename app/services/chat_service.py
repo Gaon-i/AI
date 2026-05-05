@@ -419,6 +419,7 @@ def _answer_unspecified_dormitory_chat(
         raise
 
     try:
+
         if _should_search_each_dormitory(question):
             chunks = _search_chunks_by_each_dormitory(
                 db=db,
@@ -435,20 +436,6 @@ def _answer_unspecified_dormitory_chat(
                 dormitories=settings.chat_grouped_dormitories,
                 top_k=settings.chat_grouped_dormitory_top_k,
             )
-        
-        print("===== GROUPED SEARCH DEBUG =====")
-        print("question:", question)    
-        print("chunks_count:", len(chunks))
-        for index, chunk in enumerate(chunks, start=1):
-            print(
-                index,
-                chunk.get("document_id"),
-                chunk.get("dormitory"),
-                chunk.get("similarity"),
-                chunk.get("source"),
-                (chunk.get("content") or "")[:300],
-            )
-        print("================================")
 
 
 
@@ -890,25 +877,28 @@ def _should_pre_expand_query(question: str) -> bool:
     return False
 
 
+DORMITORY_SPECIFIC_SEARCH_TRIGGERS = [
+    "휴게실",
+    "다리미",
+    "편의점",
+    "전자레인지",
+    "전자렌지",
+    "정수기",
+    "세탁실",
+    "수용인원",
+    "몇명",
+    "몇명수용",
+    "호실수",
+]
+
+
 def _should_search_each_dormitory(question: str) -> bool:
     compact_question = question.replace(" ", "")
 
-    dormitory_specific_triggers = [
-        "휴게실",
-        "다리미",
-        "편의점",
-        "전자레인지",
-        "전자렌지",
-        "정수기",
-        "세탁실",
-        "탕비실",
-        "수용인원",
-        "몇명",
-        "몇명수용",
-        "호실수",
-    ]
-
-    return any(trigger in compact_question for trigger in dormitory_specific_triggers)
+    return any(
+        trigger in compact_question
+        for trigger in DORMITORY_SPECIFIC_SEARCH_TRIGGERS
+    )
 
 def _search_chunks_by_each_dormitory(
     db: Session,
@@ -931,6 +921,7 @@ def _search_chunks_by_each_dormitory(
             candidate_k=20,
             keyword_weight=0.3,
         )
+
 
         for chunk in dormitory_chunks:
             regulation_chunk_id = chunk.get("regulation_chunk_id")

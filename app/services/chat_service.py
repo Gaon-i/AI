@@ -419,13 +419,36 @@ def _answer_unspecified_dormitory_chat(
         raise
 
     try:
-        chunks = search_hybrid_chunks_for_dormitories(
-            db=db,
-            query_text=question,
-            query_embedding=query_embedding,
-            dormitories=settings.chat_grouped_dormitories,
-            top_k=settings.chat_grouped_dormitory_top_k,
-        )
+        if _should_search_each_dormitory(question):
+            chunks = _search_chunks_by_each_dormitory(
+                db=db,
+                question=question,
+                query_embedding=query_embedding,
+                dormitories=settings.chat_grouped_dormitories,
+                top_k_per_dormitory=1,
+            )
+        else:
+            chunks = search_hybrid_chunks_for_dormitories(
+                db=db,
+                query_text=question,
+                query_embedding=query_embedding,
+                dormitories=settings.chat_grouped_dormitories,
+                top_k=settings.chat_grouped_dormitory_top_k,
+            )
+        
+        print("===== GROUPED SEARCH DEBUG =====")
+        print("question:", question)    
+        print("chunks_count:", len(chunks))
+        for index, chunk in enumerate(chunks, start=1):
+            print(
+                index,
+                chunk.get("document_id"),
+                chunk.get("dormitory"),
+                chunk.get("similarity"),
+                chunk.get("source"),
+                (chunk.get("content") or "")[:300],
+            )
+        print("================================")
 
 
 
@@ -865,3 +888,58 @@ def _should_pre_expand_query(question: str) -> bool:
         return True
 
     return False
+
+
+def _should_search_each_dormitory(question: str) -> bool:
+    compact_question = question.replace(" ", "")
+
+    dormitory_specific_triggers = [
+        "휴게실",
+        "다리미",
+        "편의점",
+        "전자레인지",
+        "전자렌지",
+        "정수기",
+        "세탁실",
+        "탕비실",
+        "수용인원",
+        "몇명",
+        "몇명수용",
+        "호실수",
+    ]
+
+    return any(trigger in compact_question for trigger in dormitory_specific_triggers)
+
+def _search_chunks_by_each_dormitory(
+    db: Session,
+    *,
+    question: str,
+    query_embedding: list[float],
+    dormitories: list[str],
+    top_k_per_dormitory: int = 1,
+) -> list[dict]:
+    merged_chunks: list[dict] = []
+    seen_chunk_ids: set[int] = set()
+
+    for dormitory in dormitories:
+        dormitory_chunks = search_hybrid_chunks(
+            db=db,
+            query_text=question,
+            query_embedding=query_embedding,
+            dormitory=dormitory,
+            top_k=top_k_per_dormitory,
+            candidate_k=20,
+            keyword_weight=0.3,
+        )
+
+        for chunk in dormitory_chunks:
+            regulation_chunk_id = chunk.get("regulation_chunk_id")
+
+            if regulation_chunk_id is not None:
+                if regulation_chunk_id in seen_chunk_ids:
+                    continue
+                seen_chunk_ids.add(regulation_chunk_id)
+
+            merged_chunks.append(chunk)
+
+    return merged_chunks

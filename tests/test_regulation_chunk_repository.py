@@ -16,15 +16,24 @@ class FakeSession:
         self.added: list[object] = []
         self.flush_called = False
         self.refresh_called_values: list[object] = []
+        self.executed_statements: list[object] = []
+        self.executed_params: list[dict] = []
 
     def add(self, value) -> None:
         self.added.append(value)
 
     def flush(self) -> None:
         self.flush_called = True
+        for index, value in enumerate(self.added, start=1):
+            value.regulation_chunk_id = index
 
     def refresh(self, value) -> None:
         self.refresh_called_values.append(value)
+
+    def execute(self, statement, params):
+        self.executed_statements.append(statement)
+        self.executed_params.append(params)
+        return SimpleNamespace(rowcount=len(params["regulation_chunk_ids"]))
 
 
 def test_create_regulation_chunks_for_document_maps_document_fields_to_model() -> None:
@@ -54,6 +63,8 @@ def test_create_regulation_chunks_for_document_maps_document_fields_to_model() -
     assert regulation_chunk.keywords == ["외박", "외출"]
     assert regulation_chunk.embedding_model == "text-embedding-3-small"
     assert db.flush_called is True
+    assert db.executed_params == [{"regulation_chunk_ids": [1]}]
+    assert "search_tsvector = to_tsvector" in str(db.executed_statements[0])
     assert db.refresh_called_values == [regulation_chunk]
 
 
@@ -98,6 +109,7 @@ def test_count_chunks_for_document_uses_count_query() -> None:
 
 def test_search_hybrid_chunks_maps_hybrid_score_to_similarity() -> None:
     executed_params: list[dict] = []
+    executed_statements: list[object] = []
 
     class MappingResult:
         def mappings(self):
@@ -125,7 +137,8 @@ def test_search_hybrid_chunks_maps_hybrid_score_to_similarity() -> None:
             ]
 
     class HybridSession:
-        def execute(self, _statement, params):
+        def execute(self, statement, params):
+            executed_statements.append(statement)
             executed_params.append(params)
             return MappingResult()
 
@@ -139,6 +152,9 @@ def test_search_hybrid_chunks_maps_hybrid_score_to_similarity() -> None:
 
     assert executed_params[0]["query_text"] == "외박 신청"
     assert executed_params[0]["dormitory"] == "제1학생생활관"
+    executed_sql = str(executed_statements[0])
+    assert "rc.search_tsvector" in executed_sql
+    assert "to_tsvector(" not in executed_sql
     assert result[0]["similarity"] == 0.874
     assert result[0]["vector_similarity"] == 0.82
     assert result[0]["vector_score"] == 0.82
@@ -170,3 +186,26 @@ def test_search_hybrid_chunks_for_dormitories_passes_dormitory_list() -> None:
 
     assert result == []
     assert executed_params[0]["dormitories"] == ["제1학생생활관", "제2학생생활관"]
+
+
+def test_refresh_search_vectors_for_chunks_updates_tsvector_from_document_content() -> None:
+    executed_statements: list[object] = []
+    executed_params: list[dict] = []
+
+    class RefreshSession:
+        def execute(self, statement, params):
+            executed_statements.append(statement)
+            executed_params.append(params)
+            return SimpleNamespace(rowcount=2)
+
+    result = regulation_chunk_repository.refresh_search_vectors_for_chunks(
+        RefreshSession(),
+        [10, 11],
+    )
+
+    executed_sql = str(executed_statements[0])
+    assert result == 2
+    assert "UPDATE regulation_chunk AS rc" in executed_sql
+    assert "search_tsvector = to_tsvector" in executed_sql
+    assert "COALESCE(rd.content, '')" in executed_sql
+    assert executed_params == [{"regulation_chunk_ids": [10, 11]}]

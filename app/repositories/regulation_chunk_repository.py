@@ -53,9 +53,43 @@ def create_regulation_chunks_for_document(
         created_chunks.append(regulation_chunk)
 
     db.flush()
+    refresh_search_vectors_for_chunks(
+        db,
+        [
+            regulation_chunk.regulation_chunk_id
+            for regulation_chunk in created_chunks
+            if regulation_chunk.regulation_chunk_id is not None
+        ],
+    )
     for regulation_chunk in created_chunks:
         db.refresh(regulation_chunk)
     return created_chunks
+
+
+def refresh_search_vectors_for_chunks(db: Session, regulation_chunk_ids: list[int]) -> int:
+    """저장된 청크 검색 텍스트를 tsvector 컬럼에 반영합니다."""
+
+    if not regulation_chunk_ids:
+        return 0
+
+    result = db.execute(
+        text(
+            """
+            UPDATE regulation_chunk AS rc
+            SET search_tsvector = to_tsvector(
+                'simple',
+                COALESCE(rc.chunk_text, '') || ' ' ||
+                COALESCE(rd.content, '') || ' ' ||
+                COALESCE(rc.keywords::text, '')
+            )
+            FROM regulation_document AS rd
+            WHERE rd.regulation_document_id = rc.regulation_document_id
+              AND rc.regulation_chunk_id = ANY(:regulation_chunk_ids)
+            """
+        ),
+        {"regulation_chunk_ids": regulation_chunk_ids},
+    )
+    return result.rowcount or 0
 
 
 def deactivate_chunks_for_document(db: Session, regulation_document_id: int) -> int:
@@ -392,23 +426,13 @@ def _search_hybrid_chunks(
                 rd.dormitory,
                 1 - (rc.embedding <=> CAST(:embedding AS vector)) AS vector_similarity,
                 ts_rank_cd(
-                    to_tsvector(
-                        'simple',
-                        COALESCE(rc.chunk_text, '') || ' ' ||
-                        COALESCE(rd.content, '') || ' ' ||
-                        COALESCE(rc.keywords::text, '')
-                    ),
+                    rc.search_tsvector,
                     websearch_to_tsquery('simple', :query_text)
                 ) AS keyword_score,
                 NULL::bigint AS vector_rank,
                 ROW_NUMBER() OVER (
                     ORDER BY ts_rank_cd(
-                        to_tsvector(
-                            'simple',
-                            COALESCE(rc.chunk_text, '') || ' ' ||
-                            COALESCE(rd.content, '') || ' ' ||
-                            COALESCE(rc.keywords::text, '')
-                        ),
+                        rc.search_tsvector,
                         websearch_to_tsquery('simple', :query_text)
                     ) DESC
                 ) AS keyword_rank
@@ -419,12 +443,7 @@ def _search_hybrid_chunks(
               AND rc.is_active = TRUE
               AND rd.is_active = TRUE
               AND rc.embedding IS NOT NULL
-              AND to_tsvector(
-                    'simple',
-                    COALESCE(rc.chunk_text, '') || ' ' ||
-                    COALESCE(rd.content, '') || ' ' ||
-                    COALESCE(rc.keywords::text, '')
-                  ) @@ websearch_to_tsquery('simple', :query_text)
+              AND rc.search_tsvector @@ websearch_to_tsquery('simple', :query_text)
             ORDER BY keyword_score DESC
             LIMIT :candidate_k
         ),

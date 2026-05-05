@@ -76,6 +76,7 @@ def test_regulation_chunk_columns_match_expected_schema() -> None:
         "chunk_index",
         "chunk_text",
         "keywords",
+        "search_tsvector",
         "embedding",
         "chunk_hash",
         "embedding_model",
@@ -93,6 +94,7 @@ def test_regulation_chunk_indexes_match_expected_schema() -> None:
         "idx_regulation_chunk_document_version",
         "idx_regulation_chunk_chunk_id",
         "idx_regulation_chunk_is_active",
+        "idx_regulation_chunk_search_tsvector",
     }
 
 

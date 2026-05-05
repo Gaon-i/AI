@@ -422,11 +422,6 @@ def _answer_unspecified_dormitory_chat(
         raise
 
     try:
-
-        print("should each dorm:", _should_search_each_dormitory(question))
-        print("question:", question)
-
-
         if _should_search_each_dormitory(question):
             chunks = _search_chunks_by_each_dormitory(
                 db=db,
@@ -443,17 +438,6 @@ def _answer_unspecified_dormitory_chat(
                 dormitories=settings.chat_grouped_dormitories,
                 top_k=settings.chat_grouped_dormitory_top_k,
             )
-            
-        print("===== FINAL EACH DORMITORY CHUNKS =====")
-        print("chunks_count:", len(chunks))
-        for index, chunk in enumerate(chunks, start=1):
-            print(
-                index,
-                chunk.get("document_id"),
-                chunk.get("source"),
-                (chunk.get("content") or "")[:200],
-            )
-        print("======================================")
     
 
 

@@ -8,6 +8,22 @@ settings = get_settings()
 client = OpenAI(api_key=settings.openai_api_key)
 
 
+def _to_text(value) -> str:
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value.strip()
+
+    if isinstance(value, list):
+        return "\n".join(_to_text(item) for item in value)
+
+    if isinstance(value, dict):
+        return "\n".join(f"{key}: {_to_text(val)}" for key, val in value.items())
+
+    return str(value)
+
+
 def summarize_notice(title: str, content: str) -> NoticeSummaryData:
     settings = get_settings()
     prompt = f"""
@@ -39,9 +55,9 @@ def summarize_notice(title: str, content: str) -> NoticeSummaryData:
     payload = json.loads(response_text)
 
     return NoticeSummaryData(
-        summary=payload["summary"],
-        target_info=payload.get("target_info"),
-        schedule_info=payload.get("schedule_info"),
-        caution_info=payload.get("caution_info"),
+        summary=_to_text(payload.get("summary")),
+        target_info=_to_text(payload.get("target_info")),
+        schedule_info=_to_text(payload.get("schedule_info")),
+        caution_info=_to_text(payload.get("caution_info")),
         generated_model=response.model,
     )

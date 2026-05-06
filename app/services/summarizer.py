@@ -16,10 +16,12 @@ def _to_text(value) -> str:
         return value.strip()
 
     if isinstance(value, list):
-        return "\n".join(_to_text(item) for item in value)
+        return "\n".join(text for item in value if (text := _to_text(item)))
 
     if isinstance(value, dict):
-        return "\n".join(f"{key}: {_to_text(val)}" for key, val in value.items())
+        return "\n".join(
+            f"{key}: {text}" for key, val in value.items() if (text := _to_text(val))
+        )
 
     return str(value)
 

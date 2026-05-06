@@ -34,3 +34,8 @@ def test_summarize_notice_normalizes_structured_llm_fields(monkeypatch) -> None:
     assert result.schedule_info == "일시: 2026년 5월 8일 10시"
     assert result.caution_info == "귀중품은 보관해 주세요.\n소독 시간에는 협조 바랍니다."
     assert result.generated_model == "fake-model"
+
+
+def test_to_text_omits_empty_nested_values() -> None:
+    assert summarizer._to_text(["A", None, "  ", "B"]) == "A\nB"
+    assert summarizer._to_text({"대상": "전체", "비고": None, "공백": "  "}) == "대상: 전체"

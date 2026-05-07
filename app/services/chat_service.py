@@ -103,7 +103,6 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
                 session_id=payload.session_id,
                 answer_status=ChatAnswerStatus.NO_ANSWER,
                 answer=settings.chat_invalid_question_message,
-                source_url="",
                 rewritten_query=normalized_question,
                 model_name=None,
                 prompt_version=None,
@@ -123,7 +122,6 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
                 session_id=payload.session_id,
                 answer_status=ChatAnswerStatus.SUCCESS,
                 answer=room_floor_result.answer,
-                source_url=room_floor_result.source_url,
                 rewritten_query=normalized_question,
                 model_name=None,
                 prompt_version=None,
@@ -156,7 +154,6 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
             session_id=payload.session_id,
             answer_status=ChatAnswerStatus.ERROR,
             answer="",
-            source_url="",
             rewritten_query=normalized_question,
             model_name=None,
             prompt_version=None,
@@ -230,7 +227,6 @@ def _answer_single_dormitory_chat(
             session_id=session_id,
             answer_status=ChatAnswerStatus.NO_ANSWER,
             answer=settings.chat_no_answer_message,
-            source_url="",
             rewritten_query=question,
             model_name=None,
             prompt_version=None,
@@ -366,11 +362,9 @@ def _answer_single_dormitory_chat(
     db.commit()
 
     final_answer_status = ChatAnswerStatus.SUCCESS
-    final_source_url = answer_result.source_url or ""
 
     if _is_no_answer(answer_result.answer):
         final_answer_status = ChatAnswerStatus.NO_ANSWER
-        final_source_url = ""
 
     
 
@@ -379,7 +373,6 @@ def _answer_single_dormitory_chat(
         session_id=session_id,
         answer_status=final_answer_status,
         answer=answer_result.answer,
-        source_url=final_source_url,
         rewritten_query=rewritten_query,
         model_name=settings.chat_answer_model,
         prompt_version=settings.chat_prompt_version_single,
@@ -535,18 +528,15 @@ def _answer_unspecified_dormitory_chat(
     db.commit()
 
     final_answer_status = ChatAnswerStatus.SUCCESS
-    final_source_url = answer_result.source_url or ""
 
     if _is_no_answer(answer_result.answer):
         final_answer_status = ChatAnswerStatus.NO_ANSWER
-        final_source_url = ""
 
     return _finalize_chat_log_in_new_session(
         chat_log_id=chat_log_id,
         session_id=session_id,
         answer_status=final_answer_status,
         answer=answer_result.answer,
-        source_url=final_source_url,
         rewritten_query=rewritten_query,
         model_name=settings.chat_answer_model,
         prompt_version=settings.chat_prompt_version_grouped,
@@ -564,7 +554,6 @@ def _finalize_chat_log(
     session_id: str,
     answer_status: ChatAnswerStatus,
     answer: str,
-    source_url: str,
     rewritten_query: Optional[str],
     model_name: Optional[str],
     prompt_version: Optional[str],
@@ -631,7 +620,6 @@ def _finalize_chat_log_in_new_session(
     session_id: str,
     answer_status: ChatAnswerStatus,
     answer: str,
-    source_url: str,
     rewritten_query: Optional[str],
     model_name: Optional[str],
     prompt_version: Optional[str],
@@ -650,7 +638,6 @@ def _finalize_chat_log_in_new_session(
             session_id=session_id,
             answer_status=answer_status,
             answer=answer,
-            source_url=source_url,
             rewritten_query=rewritten_query,
             model_name=model_name,
             prompt_version=prompt_version,
@@ -738,28 +725,28 @@ def _get_query_expansion_rerank_keywords(question: str, expanded_query: str) -> 
     text = f"{question} {expanded_query}".replace(" ", "")
 
     cooking_triggers = [
-    "라면끓",
-    "라면먹",
-    "라면먹어",
-    "라면먹어도",
-    "라면 먹어",
-    "라면 먹어도",
-    "방에서라면",
-    "방에서 라면",
-    "끓여 먹",
-    "끓여먹",
-    "끓여",
-    "취사",
-    "조리",
-    "요리",
-    "해먹",
-    "음식해",
-    "음식해먹",
-    "음식 해먹"
-    "전기포트",
-    "라면포트",
-    "에어프라이어",
-    "커피포트",
+        "라면끓",
+        "라면먹",
+        "라면먹어",
+        "라면먹어도",
+        "라면 먹어",
+        "라면 먹어도",
+        "방에서라면",
+        "방에서 라면",
+        "끓여 먹",
+        "끓여먹",
+        "끓여",
+        "취사",
+        "조리",
+        "요리",
+        "해먹",
+        "음식해",
+        "음식해먹",
+        "음식 해먹",
+        "전기포트",
+        "라면포트",
+        "에어프라이어",
+        "커피포트",
     ]
 
     if any(trigger in text for trigger in cooking_triggers):
@@ -853,28 +840,28 @@ def _should_pre_expand_query(question: str) -> bool:
 
 
     cooking_triggers = [
-    "라면끓",
-    "라면먹",
-    "라면먹어",
-    "라면먹어도",
-    "라면 먹어",
-    "라면 먹어도",
-    "방에서라면",
-    "방에서 라면",
-    "끓여 먹",
-    "끓여먹",
-    "끓여",
-    "취사",
-    "조리",
-    "요리",
-    "해먹",
-    "음식해",
-    "음식해먹",
-    "음식 해먹",
-    "전기포트",
-    "라면포트",
-    "에어프라이어",
-    "커피포트",
+        "라면끓",
+        "라면먹",
+        "라면먹어",
+        "라면먹어도",
+        "라면 먹어",
+        "라면 먹어도",
+        "방에서라면",
+        "방에서 라면",
+        "끓여 먹",
+        "끓여먹",
+        "끓여",
+        "취사",
+        "조리",
+        "요리",
+        "해먹",
+        "음식해",
+        "음식해먹",
+        "음식 해먹",
+        "전기포트",
+        "라면포트",
+        "에어프라이어",
+        "커피포트",
     ]
 
     if any(trigger in compact_question for trigger in cooking_triggers):
@@ -882,14 +869,14 @@ def _should_pre_expand_query(question: str) -> bool:
     
 
     smoking_triggers = [
-    "담배",
-    "흡연",
-    "담배필",
-    "담배피",
-    "담배펴",
-    "흡연구역",
-    "흡연장",
-]
+        "담배",
+        "흡연",
+        "담배필",
+        "담배피",
+        "담배펴",
+        "흡연구역",
+        "흡연장",
+    ]
 
     if any(trigger in compact_question for trigger in smoking_triggers):
         return True

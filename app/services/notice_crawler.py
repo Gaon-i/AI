@@ -15,6 +15,22 @@ from app.schemas.notice import NoticeUpsertPayload
 NOTICE_LIST_URL = "https://www.gachon.ac.kr/dormitory/2351/subview.do"
 NOTICE_ARTICLE_LIMIT = 10
 NOTICE_DATE_FORMAT = "%Y.%m.%d"
+DETAIL_TEXT_BLOCK_TAGS = {
+    "article",
+    "dd",
+    "div",
+    "dt",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "li",
+    "p",
+    "td",
+    "th",
+}
 
 
 @dataclass(frozen=True)
@@ -156,11 +172,7 @@ def parse_notice_detail_page(html: str, title: str) -> str:
     """상세 HTML에서 본문 텍스트만 추출합니다."""
 
     soup = BeautifulSoup(html, "html.parser")
-    text_lines = [
-        _normalize_text(line)
-        for line in soup.get_text("\n", strip=True).splitlines()
-        if _normalize_text(line)
-    ]
+    text_lines = _extract_detail_text_lines(soup)
     if not text_lines:
         raise ValueError("failed to extract notice detail content")
 
@@ -168,13 +180,39 @@ def parse_notice_detail_page(html: str, title: str) -> str:
     content_end_index = _find_content_end_index(text_lines)
     content_lines = text_lines[content_start_index:content_end_index]
 
-    if content_lines and content_lines[0] == _normalize_text(title):
+    normalized_title = _normalize_text(title)
+    while content_lines and content_lines[0] == normalized_title:
         content_lines = content_lines[1:]
 
     content = "\n".join(content_lines).strip()
     if not content:
         raise ValueError("failed to extract notice detail content")
     return content
+
+
+def _extract_detail_text_lines(soup: BeautifulSoup) -> list[str]:
+    """블록 경계는 보존하고, 블록 내부의 조각난 inline 텍스트는 한 줄로 합칩니다."""
+
+    text_lines: list[str] = []
+
+    for element in soup.find_all(DETAIL_TEXT_BLOCK_TAGS):
+        if element.find(DETAIL_TEXT_BLOCK_TAGS):
+            continue
+
+        text = _normalize_text(element.get_text(" ", strip=True))
+        if not text:
+            continue
+
+        text_lines.append(text)
+
+    if text_lines:
+        return text_lines
+
+    return [
+        _normalize_text(line)
+        for line in soup.get_text("\n", strip=True).splitlines()
+        if _normalize_text(line)
+    ]
 
 
 def _extract_posted_at(text: str) -> Optional[datetime]:

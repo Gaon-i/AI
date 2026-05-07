@@ -112,6 +112,33 @@ def test_parse_notice_detail_page_extracts_body_without_metadata_and_attachments
     assert "2. 참여보고서 제출 : 해당 생활관 사감실 제출" in content
 
 
+def test_parse_notice_detail_page_joins_fragmented_inline_text() -> None:
+    content = parse_notice_detail_page(
+        """
+        <html>
+          <body>
+            <div>등록일</div>
+            <div>2026.04.10</div>
+            <h2>학생생활관 중간고사 통금시간 일정 안내</h2>
+            <div>학생생활관 중간고사 통금시간 일정 안내</div>
+            <div>
+              <span>2026</span>
+              <span>년 1</span>
+              <span>학기 중간고사 내 출입 통제 시간</span>
+              <span>24</span>
+              <span>시간 개방으로 시행합니다</span>
+              <span>.</span>
+            </div>
+            <div>첨부파일</div>
+          </body>
+        </html>
+        """,
+        title="학생생활관 중간고사 통금시간 일정 안내",
+    )
+
+    assert content == "2026 년 1 학기 중간고사 내 출입 통제 시간 24 시간 개방으로 시행합니다 ."
+
+
 def test_crawl_recent_notice_payloads_filters_old_notices_and_fetches_details() -> None:
     page_1_url = (
         "https://www.gachon.ac.kr/dormitory/2351/subview.do"

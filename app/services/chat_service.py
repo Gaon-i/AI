@@ -747,7 +747,7 @@ def _get_query_expansion_rerank_keywords(question: str, expanded_query: str) -> 
         "라면포트",
         "에어프라이어",
         "커피포트",
-        ]
+    ]
 
     if any(trigger in text for trigger in cooking_triggers):
         return [
@@ -862,7 +862,7 @@ def _should_pre_expand_query(question: str) -> bool:
         "라면포트",
         "에어프라이어",
         "커피포트",
-        ]
+    ]
 
     if any(trigger in compact_question for trigger in cooking_triggers):
         return True
@@ -876,8 +876,7 @@ def _should_pre_expand_query(question: str) -> bool:
         "담배펴",
         "흡연구역",
         "흡연장",
-        "흡연가능"
-        ]
+    ]
 
     if any(trigger in compact_question for trigger in smoking_triggers):
         return True

@@ -4,11 +4,11 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-
 class ChatRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=100)
     question: str
-    dormitory: Optional[str] = None
+    dormitory_name: Optional[str] = None
+    user_id: Optional[int] = Field(default=None, ge=1)
 
 
 class ChatResponse(BaseModel):
@@ -16,7 +16,7 @@ class ChatResponse(BaseModel):
     session_id: str
     answer: str
     answer_status: str
-    source_url: str
+    response_time: int
 
 
 ChatFeedbackReasonCode = Literal[

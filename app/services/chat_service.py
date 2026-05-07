@@ -113,7 +113,7 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
         
         room_floor_result = resolve_room_floor_question(
             normalized_question,
-            payload.dormitory,
+            payload.dormitory_name,
         )
 
         if room_floor_result is not None:
@@ -131,13 +131,13 @@ def answer_chat_question(db: Session, payload: ChatRequest) -> ChatResponse:
                 response_time_ms=_elapsed_ms(started_at),
             )
 
-        if payload.dormitory:
+        if payload.dormitory_name:
             return _answer_single_dormitory_chat(
                 db,
                 chat_log_id=chat_log_id,
                 session_id=payload.session_id,
                 question=normalized_question,
-                dormitory=payload.dormitory,
+                dormitory=payload.dormitory_name,
                 started_at=started_at,
             )
 
@@ -621,7 +621,7 @@ def _finalize_chat_log(
         session_id=session_id,
         answer=answer,
         answer_status=answer_status.value,
-        source_url=source_url,
+        response_time=response_time_ms,
     )
 
 
@@ -878,6 +878,20 @@ def _should_pre_expand_query(question: str) -> bool:
     ]
 
     if any(trigger in compact_question for trigger in cooking_triggers):
+        return True
+    
+
+    smoking_triggers = [
+    "담배",
+    "흡연",
+    "담배필",
+    "담배피",
+    "담배펴",
+    "흡연구역",
+    "흡연장",
+]
+
+    if any(trigger in compact_question for trigger in smoking_triggers):
         return True
 
     return False
